@@ -560,6 +560,36 @@ curl -X POST http://127.0.0.1:8765/inject_summary \
 - 标点模型 - 283MB
 - 说话人分离模型 - 28MB
 
+## STT 转录优先级（重要）
+
+**正确顺序**：FunASR（优先）→ Whisper CLI（fallback）
+
+- **FunASR 是主选**：中文识别质量更高，支持时间戳、说话人分离、视频关键帧
+- **Whisper CLI 是 fallback**：仅在 FunASR 服务不可用时使用（例如 funasr-onnx 安装失败、服务报错 500）
+- **绝对不要**：在没有先尝试 FunASR 的情况下直接用 Whisper
+
+### FunASR 失败时的排查步骤
+
+1. 运行 `python3 scripts/setup.py --verify` 检查 funasr-onnx 是否可用
+2. 查看服务进程日志：`process_log` 查看 `proc_<session_id>`
+3. 如果 funasr-onnx 装不上，用 Whisper CLI 作为临时 fallback（见下方）
+
+### Whisper CLI Fallback（仅在 FunASR 不可用时）
+
+```bash
+# 提取音频（16kHz 单声道）
+ffmpeg -i "/path/to/video.mp4" -vn -acodec pcm_s16le -ar 16000 -ac 1 -y "/tmp/audio.wav"
+
+# Whisper 转录（tiny 模型最快，medium 质量更好）
+/opt/homebrew/bin/whisper "/tmp/audio.wav" \
+  --model tiny \
+  --language Chinese \
+  --output_dir /tmp/transcript \
+  --output_format all
+```
+
+性能参考：19 分钟音频，tiny 模型约 3-5 分钟（Mac CPU）。
+
 ## 故障排除
 
 > 📌 B 站视频转录实战记录（2026-05-10）：`references/bilibili-transcribe-session.md`
