@@ -31,6 +31,9 @@ templates/
 !**/config/*.example.yaml
 **/config/*.json
 !**/config/*.example.json
+# Team config - keep example, ignore real data and images
+skills/legal-proposal-generator/config/team-config.md
+skills/legal-proposal-generator/config/images/
 
 # User profile - ignore personal data but keep example
 **/reference/user-profile.md
