@@ -120,6 +120,9 @@ skills/skill-manager/assets/skill-registry.json
 skills/yuandian-law-search/archive/
 
 # Claude Code 内置 skills（由系统管理，无需跟踪）
-skills/task-implement/
-skills/task-alignment/
-skills/ultra-research/
+skills/task-implement
+skills/task-alignment
+skills/ultra-research
+
+# Custom skills（用户自定义符号链接）
+custom-skills
