@@ -209,6 +209,12 @@ archive/
 | Markdown 为空 | 到 `archive/` 查看 `batches/*.json` 和 `metadata.json`，确认是否原文件质量过差 |
 | 需要看原始坐标和表格结构 | 使用 `scripts/layout_caller.py`，并读取 `result.result.layoutParsingResults[*].prunedResult` |
 
+## 整合路线图
+
+本技能将与 `mineru-ocr` 整合为统一的 `legal-ocr` Skill，支持双后端（PaddleOCR + MinerU）、自动路由和法律后处理管线。
+
+完整规划见 [`docs/ROADMAP_LEGAL_OCR.md`](docs/ROADMAP_LEGAL_OCR.md)。
+
 ## 维护建议
 
 修改本技能后，同步更新：
