@@ -2,7 +2,12 @@
 
 > 面向法律从业者的 AI Agent Skills 集合，支持从内容获取、处理到专业写作的全流程 AI 协作。兼容 Claude Code、OpenClaw、WorkBuddy、QoderWork、CodeX、OpenCode、Hermes 等主流 AI Agent 平台。
 
-[![GitHub](https://img.shields.io/badge/GitHub-cat--xierluo-blue)](https://github.com/cat-xierluo/legal-skills)
+[![Legal Skills](https://img.shields.io/badge/Legal%20Skills-AI%20for%20Law-1F4E5F)](https://github.com/cat-xierluo/legal-skills)
+[![Skills](https://img.shields.io/badge/Skills-42-2E7D32)](#-技能列表)
+[![Domain](https://img.shields.io/badge/Domain-LegalTech-0F766E)](#-项目概述)
+[![Language](https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87%E4%BC%98%E5%85%88-B91C1C)](#)
+[![Latest Update](https://img.shields.io/badge/Latest%20Update-2026--05--17-success)](#-最近更新的-skill)
+[![GitHub stars](https://img.shields.io/github/stars/cat-xierluo/legal-skills?style=social)](https://github.com/cat-xierluo/legal-skills/stargazers)
 
 ## 👨‍💼 关于作者
 
@@ -15,9 +20,9 @@
 
 本项目采用两种许可证：
 
-| 许可证 | 说明 | 示例技能 |
-|:------|:-----|:---------|
-| **MIT** | 可自由使用，包括商用，但需保留署名 | wechat-article-fetch、mineru-ocr、md2word 等 |
+| 许可证             | 说明                                                         | 示例技能                                                          |
+| :----------------- | :----------------------------------------------------------- | :---------------------------------------------------------------- |
+| **MIT**      | 可自由使用，包括商用，但需保留署名                           | wechat-article-fetch、mineru-ocr、md2word 等                      |
 | **CC-BY-NC** | 可自由使用，但**不可商用**，且需保留署名和相同方式共享 | litigation-analysis、patent-analysis、legal-proposal-generator 等 |
 
 > 💡 如需将技能用于商业目的，请添加微信（ywxlaw）联系授权
@@ -30,6 +35,20 @@
 </div>
 
 ---
+
+## 🆕 最近更新的 Skill
+
+| 日期       | 类型     | Skill                                             | 版本   | 更新要点                                                                                   |
+| :--------- | :------- | :------------------------------------------------ | :----- | :----------------------------------------------------------------------------------------- |
+| 2026-05-17 | 新上传   | [git-workflow](skills/git-workflow/)               | v1.0.0 | 新增 Git 全流程工作流 Skill，覆盖分支、PR 合并、Monorepo 安全合并、冲突恢复和 Cherry-pick 安全规则 |
+| 2026-05-17 | 更新     | [skill-manager](skills/skill-manager/)             | v1.4.0 | 新增 Codex 目标目录识别，支持在 `/Users/maoking/.codex` 或包含 `.codex` 配置的项目中安装 Skill |
+| 2026-05-17 | 更新     | [svg-book-illustrator](skills/svg-book-illustrator/) | v1.3.0 | 新增 SVG 转 PNG 高分辨率转换、补齐 MIT 许可证，并修复转换超时与浏览器进程关闭问题          |
+| 2026-05-17 | 新上传   | [article2book](skills/article2book/)                 | v1.0.0 | 正式发布内容资产再组织 Skill，支持成书、小册子、课程、系列文章、实务手册和知识库等形态判断 |
+| 2026-05-17 | 更新     | [agent-email](skills/agent-email/)                   | v0.3.1 | 修复邮件命令参数组装、显示名和正文空格处理，并同步配置示例                                 |
+| 2026-05-16 | 新上传   | [project-init](skills/project-init/)                 | v1.0.0 | 新增项目类型检测、配置驱动、Skill 安装委托、项目文档模板和 Skill 项目脚手架                |
+| 2026-05-15 | 更新     | [git-batch-commit](skills/git-batch-commit/)         | v1.4.0 | 将 Issue 与 PR 命名规范迁移到更合适的 Git 工作流 Skill，聚焦批量提交职责                   |
+| 2026-05-13 | 更新     | [yuandian-law-search](skills/yuandian-law-search/)   | v1.3.3 | 归档记录新增来源链接字段，并提供现有 archive 的 source_urls 回填能力                       |
+| 2026-05-10 | 正式发布 | [legal-qa-extractor](skills/legal-qa-extractor/)     | v1.1.0 | 从测试目录迁移至正式 skills 目录，新增配置模板、增量扫描和项目级聚合                       |
 
 ## 📋 项目概述
 
@@ -58,19 +77,7 @@
 
 ## 🛠️ 技能列表
 
-### 推荐技能
-
-来自官方或其他优秀开发者的通用技能：
-
-| 技能                                                         | 说明                                         | 许可证       |
-| :----------------------------------------------------------- | :------------------------------------------- | :----------- |
-| **[skill-creator](https://github.com/anthropics/skills)** | 技能创建指南和工具集                         | 参照官方许可 |
-| **[pdf](https://github.com/anthropics/skills)**           | PDF 处理工具包：文本提取、表单填写、合并拆分 | 参照官方许可 |
-| **[docx](https://github.com/anthropics/skills)**          | Word 文档处理工具包                          | 参照官方许可 |
-
-### 自研技能
-
-面向法律工作者的实用技能：
+以下均为本项目自研技能，面向法律工作者的实际工作流按场景整理：
 
 #### 📥 内容获取
 
@@ -403,9 +410,9 @@
 </tr>
 <tr>
 <td><a href="skills/skill-manager/"><strong>skill-manager</strong></a></td>
-<td style="word-break:break-word">管理 AI Agent Skills 的安装、同步、卸载和列表查看，支持本地路径和 GitHub 仓库/子目录，自动识别并批量处理</td>
+<td style="word-break:break-word">管理 AI Agent Skills 的安装、同步、卸载和列表查看，支持本地路径和 GitHub 仓库/子目录，自动识别 Codex、Claude Code 和 OpenClaw 目标目录并批量处理</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.3.0</td>
+<td style="text-align:center">v1.4.0</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -422,6 +429,14 @@
 <td style="word-break:break-word">智能 Git 批量提交工具，自动将混合的文件修改按类型分类并创建多个清晰聚焦的提交，使用标准化的提交信息格式</td>
 <td style="text-align:center">MIT</td>
 <td style="text-align:center">v1.3.0</td>
+<td style="text-align:center">杨卫薪</td>
+<td></td>
+</tr>
+<tr>
+<td><a href="skills/git-workflow/"><strong>git-workflow</strong></a></td>
+<td style="word-break:break-word">Git 全流程工作流助手，覆盖分支创建、Monorepo 安全合并、PR 创建/审查/合并、合并冲突恢复、Cherry-pick 安全流程和常规 Git 操作规则</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v1.0.0</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -491,4 +506,4 @@
 
 将以下内容复制到你的 Agent 平台，让它帮你安装：
 
-> 请帮我从 GitHub 安装 legal-skills 技能集合：<https://github.com/cat-xierluo/legal-skills>
+> 请帮我从 GitHub 安装 legal-skills 技能集合：[https://github.com/cat-xierluo/legal-skills](https://github.com/cat-xierluo/legal-skills)
