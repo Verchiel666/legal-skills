@@ -1,6 +1,6 @@
 {
   "skill_name": "opc-legal-counsel",
-  "version": "0.2.4",
+  "version": "0.2.6",
   "answer_file_convention": "<outputs-dir>/<eval_id>.md",
   "assertion_types": {
     "contains_any": "回答文本至少包含 terms 中任一关键词",

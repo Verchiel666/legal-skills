@@ -66,6 +66,12 @@ AI：我会先判断公司阶段、资金路径和业务类型，再按公私分
 python3 scripts/check-evals.py
 ```
 
+也可以从仓库根目录显式传入技能路径：
+
+```bash
+python3 skills/opc-legal-counsel/scripts/check-evals.py skills/opc-legal-counsel
+```
+
 ## 可以怎么用
 
 - “我是一个人做 AI SaaS，注册一人有限公司还是个体户更合适？”
@@ -89,6 +95,7 @@ python3 scripts/check-evals.py
 - 处理刑事、跨境、金融、医疗、证券等高监管深度专项问题
 - 在缺少地域、主体、合同、资金流水或产品事实时直接下最终结论
 - 代替会计师、税务师或行政机关完成申报、登记、备案等流程
+- 替代深度合同批注、商标申请、专利分析、纯法规检索等专项技能
 
 ## 核心设计
 
@@ -107,9 +114,10 @@ python3 scripts/check-evals.py
 ## 质量支撑
 
 - 固定输出协议，避免回答只有概念没有动作
+- 法源登记表，统一管理全国法、AI 专项规则、官方公告和地方覆盖层来源
 - 24 条评测样本，覆盖基础盘、OPC/AI 强化层、成长阶段和跨领域场景
 - 重点样本人工评分说明和机器可读断言
-- `scripts/check-evals.py` 可检查评测样本结构和部分回答断言
+- `scripts/check-evals.py` 可检查评测样本结构、版本一致性和部分回答断言
 - 三套标准输出样稿：AI 上线、公私分离、合同审查
 - 公开 examples，帮助外部访客理解实际回答形态
 
@@ -117,6 +125,7 @@ python3 scripts/check-evals.py
 
 - [SKILL.md](./SKILL.md)：执行入口和输出协议
 - [references/file-index.md](./references/file-index.md)：完整文件索引
+- [references/source-register.md](./references/source-register.md)：法源与政策来源登记表
 - [references/governance.md](./references/governance.md)：公司治理与 OPC 风险
 - [references/ai-compliance.md](./references/ai-compliance.md)：AI 产品上线合规
 - [references/growth-financing.md](./references/growth-financing.md)：成长阶段、融资和股权安排

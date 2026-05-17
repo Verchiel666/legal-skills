@@ -3,6 +3,7 @@
 
 Usage:
     python3 scripts/check-evals.py
+    python3 skills/opc-legal-counsel/scripts/check-evals.py skills/opc-legal-counsel
     python3 scripts/check-evals.py --outputs-dir path/to/answers
 
 When --outputs-dir is provided, answer files should follow:
@@ -50,6 +51,16 @@ ALLOWED_ROUTING = {
     "ai-compliance",
     "growth-financing",
 }
+
+
+def configure_paths(skill_root: Path) -> None:
+    """Point validation paths at an explicit skill root."""
+    global ROOT, SKILL_PATH, EVALS_PATH, ASSERTIONS_PATH
+
+    ROOT = skill_root.resolve()
+    SKILL_PATH = ROOT / "SKILL.md"
+    EVALS_PATH = ROOT / "evals" / "evals.json"
+    ASSERTIONS_PATH = ROOT / "evals" / "assertions.json"
 
 
 @dataclass
@@ -264,6 +275,7 @@ def validate_outputs(outputs_dir: Path, assertions_data: dict[str, Any]) -> list
         answer = answer_path.read_text(encoding="utf-8")
         case_passed = 0
         case_total = 0
+        case_failures: list[str] = []
         for assertion in case.get("assertions", []):
             case_total += 1
             total += 1
@@ -272,10 +284,11 @@ def validate_outputs(outputs_dir: Path, assertions_data: dict[str, Any]) -> list
                 case_passed += 1
                 passed += 1
             else:
-                failures.append(f"{case_id}: {result.message}")
+                case_failures.append(f"{case_id}: {result.message}")
 
         minimum = int(case.get("minimum_passed_assertions", case_total))
         if case_passed < minimum:
+            failures.extend(case_failures)
             failures.append(
                 f"{case_id}: 断言通过数 {case_passed}/{case_total}，低于最低要求 {minimum}"
             )
@@ -287,11 +300,19 @@ def validate_outputs(outputs_dir: Path, assertions_data: dict[str, Any]) -> list
 def main() -> int:
     parser = argparse.ArgumentParser(description="检查 opc-legal-counsel 评测样本与可选回答输出")
     parser.add_argument(
+        "skill_root",
+        nargs="?",
+        type=Path,
+        default=ROOT,
+        help="可选：技能根目录。默认按脚本所在位置自动推断",
+    )
+    parser.add_argument(
         "--outputs-dir",
         type=Path,
         help="可选：包含 <eval_id>.md 回答文件的目录，用于执行文本断言",
     )
     args = parser.parse_args()
+    configure_paths(args.skill_root)
 
     evals_data = load_json(EVALS_PATH)
     assertions_data = load_json(ASSERTIONS_PATH)

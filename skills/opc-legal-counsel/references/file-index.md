@@ -27,6 +27,7 @@
 | `references/regulatory.md` | 广告、反不正当竞争、许可、监管检查 |
 | `references/employment.md` | 劳动关系、兼职、竞业限制 |
 | `references/disputes.md` | 证据、时效、诉讼 / 仲裁应对 |
+| `references/source-register.md` | 法源、政策、标准、公告和地方材料来源登记表 |
 
 ## 成长阶段模块
 

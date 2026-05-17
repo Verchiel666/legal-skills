@@ -1,5 +1,26 @@
 # 变更日志
 
+## [0.2.6] - 2026-05-17
+
+### 新增
+
+- 新增 `references/source-register.md`，统一登记全国法律、AI 专项规则、国家标准、官方公告、地方政策和归档材料的来源层级、核验方式与使用提醒
+- 在 `SKILL.md` 中新增“触发边界与协作”章节，明确深度合同批注、商标申请、专利分析、诉讼文书、纯法规检索等场景应转入专项能力
+- 将 `opc-legal-counsel` 补入根目录 `.claude-plugin/marketplace.json`，同步公开分发索引
+
+### 改进
+
+- 更新 `references/ai-compliance.md`，补充 2026 年生成式 AI 备案公告核验入口，并加入拟人化互动服务的专项核验提示
+- 更新 `README.md`，补充法源登记表、评测脚本从仓库根目录运行的用法和专项技能边界
+- 更新根目录 `README.md` 最近更新区和技能列表版本，保持公开说明与技能版本一致
+
+### 技术优化
+
+- 将 `evals/evals.json` 与 `evals/assertions.json` 版本同步至 `0.2.6`，修复评测脚本版本一致性检查失败
+- 优化 `scripts/check-evals.py`，支持从仓库根目录显式传入技能路径运行
+- 修复 `scripts/check-evals.py` 的断言判定逻辑，使 `minimum_passed_assertions` 真正按样本最低通过数生效
+- 清理误提交的 `.DS_Store`
+
 ## [0.2.5] - 2026-04-19
 
 ### 改进
