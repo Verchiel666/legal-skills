@@ -1,6 +1,6 @@
 # Legal Skills
 
-> 面向法律从业者的 AI Agent Skills 集合，支持从内容获取、处理到专业写作的全流程 AI 协作。兼容 Claude Code、OpenClaw 等主流 AI Agent 平台。
+> 面向法律从业者的 AI Agent Skills 集合，支持从内容获取、处理到专业写作的全流程 AI 协作。兼容 Claude Code、OpenClaw、WorkBuddy、QoderWork、CodeX、OpenCode、Hermes 等主流 AI Agent 平台。
 
 [![GitHub](https://img.shields.io/badge/GitHub-cat--xierluo-blue)](https://github.com/cat-xierluo/legal-skills)
 
@@ -92,7 +92,7 @@
 <td><a href="skills/wechat-article-fetch/"><strong>wechat-article-fetch</strong></a></td>
 <td style="word-break:break-word">使用 Playwright 无头模式抓取微信公众号文章，支持动态加载内容，保存为 Markdown</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.2.0</td>
+<td style="text-align:center">v1.3.1</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -239,7 +239,7 @@
 <td><a href="skills/legal-text-format/"><strong>legal-text-format</strong></a></td>
 <td style="word-break:break-word">将法律文本（法律条文或法律案例）转换为规范的 Markdown 格式，采用 archive 归档结构存储。推荐与 <a href="skills/wechat-article-fetch/"><strong>wechat-article-fetch</strong></a> 配合使用实现完整工作流</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.1.0</td>
+<td style="text-align:center">v1.2.1</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -255,7 +255,7 @@
 <td><a href="skills/yuandian-law-search/"><strong>yuandian-law-search</strong></a></td>
 <td style="word-break:break-word">元典法条与案例检索，通过元典 API 检索中国法律法规条文和案例。支持法条语义/关键词/详情检索和案例关键词/向量语义检索，共 5 种检索模式</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.1.1</td>
+<td style="text-align:center">v1.3.3</td>
 <td style="text-align:center">杨卫薪</td>
 <td>需配置 API Key</td>
 </tr>
@@ -279,7 +279,7 @@
 <td><a href="skills/contract-copilot/"><strong>contract-copilot</strong></a></td>
 <td style="word-break:break-word">合同起草与审查助手，基于分层分析与四步流程，输出可执行的风险清单、起草骨架、修改建议、推荐措辞和审查意见书，支持批注与修订两种文档处理方式</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.4.50</td>
+<td style="text-align:center">v1.5.1</td>
 <td style="text-align:center">杨卫薪</td>
 <td><a href="https://github.com/cat-xierluo/contract-copilot.skill">独立仓库</a></td>
 </tr>
@@ -319,10 +319,18 @@
 <td></td>
 </tr>
 <tr>
+<td><a href="skills/svg-book-illustrator/"><strong>svg-book-illustrator</strong></a></td>
+<td style="word-break:break-word">书籍/文章 SVG 配图生成工具，专注于架构图、流程图、层次图等专业技术配图，针对印刷出版场景优化，字号间距按物理尺寸反推</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v1.3.0</td>
+<td style="text-align:center">杨卫薪</td>
+<td></td>
+</tr>
+<tr>
 <td><a href="skills/piclist-upload/"><strong>piclist-upload</strong></a></td>
 <td style="word-break:break-word">通过 PicList HTTP Server 将 Markdown 中的本地图片上传到图床，自动替换为云端链接，支持批量处理和跨设备访问</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.1.2</td>
+<td style="text-align:center">v1.2.0</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -338,7 +346,7 @@
 <td><a href="skills/de-ai-polish/"><strong>de-ai-polish</strong></a></td>
 <td style="word-break:break-word">检测并去除文章中的 AI 化表述模式，用于写作润色、文本优化、去 AI 腔。整合 24 种 AI 写作检测规则，配备 5 维度质量评分系统</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.0.0</td>
+<td style="text-align:center">v1.1.0</td>
 <td style="text-align:center">杨卫薪</td>
 <td><a href="https://github.com/cat-xierluo/de-ai-polish.skill">独立仓库</a></td>
 </tr>
@@ -370,6 +378,22 @@
 </thead>
 <tbody>
 <tr>
+<td><a href="skills/agent-email/"><strong>agent-email</strong></a></td>
+<td style="word-break:break-word">Agent 专用邮箱服务，通过邮件接收指令、发送结果、与其他 Agent 或人类通信。支持邮件收发、搜索、附件处理，目前支持网易 ClawEmail</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v0.3.1</td>
+<td style="text-align:center">杨卫薪</td>
+<td></td>
+</tr>
+<tr>
+<td><a href="skills/project-init/"><strong>project-init</strong></a></td>
+<td style="word-break:break-word">项目初始化工具，读取全局协议，分析项目实际情况，自动检测项目类型并生成项目特定的 CLAUDE.md、docs/ 文档体系、.claude/ 配置，支持 6 种项目类型</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v1.0.0</td>
+<td style="text-align:center">杨卫薪</td>
+<td></td>
+</tr>
+<tr>
 <td><a href="skills/skill-manager/"><strong>skill-manager</strong></a></td>
 <td style="word-break:break-word">管理 AI Agent Skills 的安装、同步、卸载和列表查看，支持本地路径和 GitHub 仓库/子目录，自动识别并批量处理</td>
 <td style="text-align:center">MIT</td>
@@ -389,7 +413,7 @@
 <td><a href="skills/git-batch-commit/"><strong>git-batch-commit</strong></a></td>
 <td style="word-break:break-word">智能 Git 批量提交工具，自动将混合的文件修改按类型分类并创建多个清晰聚焦的提交，使用标准化的提交信息格式</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.2.5</td>
+<td style="text-align:center">v1.3.0</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -429,7 +453,7 @@
 <td><a href="skills/subtree-publish/"><strong>subtree-publish</strong></a></td>
 <td style="word-break:break-word">将 monorepo 中的子目录通过 git subtree 推送到独立 GitHub 仓库，支持注册清单、变更自动检测、增量推送</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.5.0</td>
+<td style="text-align:center">v1.7.0</td>
 <td style="text-align:center">杨卫薪</td>
 <td></td>
 </tr>
@@ -457,29 +481,6 @@
 
 ## 🚀 安装方法
 
-### 方式一：让 Agent 安装（推荐）
+将以下内容复制到你的 Agent 平台，让它帮你安装：
 
-将以下内容复制给你的 Agent，让它帮你安装：
-
-> 请帮我从 GitHub 安装 legal-skills 技能集合：
->
-> - 仓库地址：<https://github.com/cat-xierluo/legal-skills>
-> - 安装方式：使用 `/skill install` 命令从仓库安装
-
-### 方式二：OpenClaw 平台
-
-将技能目录复制到 OpenClaw 的 skills 目录：
-
-```bash
-cp -r legal-skills/skills/* /path/to/openclaw/skills/
-```
-
-### 方式三：手动安装
-
-下载本项目压缩包，解压后将技能目录复制到对应平台的 skills 目录：
-
-| 平台 | 默认路径 |
-| :--- | :--- |
-| Claude Code (macOS/Linux) | `~/.claude/skills/` |
-| Claude Code (Windows) | `%USERPROFILE%\.claude\skills\` |
-| OpenClaw | 根据配置文件指定 |
+> 请帮我从 GitHub 安装 legal-skills 技能集合：<https://github.com/cat-xierluo/legal-skills>
