@@ -1,5 +1,18 @@
 # 变更日志
 
+## [1.4.0] - 2026-05-15
+
+### 变更
+
+- 将 `references/issue-pr-format.md`（Issue 与 PR 命名规范）迁移到 `git-workflow` skill，该规范与 Git 全流程工作流更相关
+- git-batch-commit 聚焦于"提交"本职，不再管理 Issue/PR 命名
+
+## [1.3.0] - 2026-05-14
+
+### 新增
+
+- 工作流新增 Subtree 推送检查（第6步）：当 `skills/subtree-publish/config/subtree-skills.json` 存在时自动执行
+
 ## [1.2.5] - 2026-04-10
 
 ### 新增
