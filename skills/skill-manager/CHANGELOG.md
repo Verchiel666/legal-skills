@@ -1,5 +1,21 @@
 # 变更日志
 
+## [1.4.0] - 2026-05-17
+
+### 新增
+- **Codex 目标目录支持**：在 `/Users/maoking/.codex` 或其子目录调用时，自动将 Skill/Command 安装到 `.codex/skills/` 或 `.codex/commands/`
+- **项目级 Codex 配置识别**：当调用目录或上级目录包含 `.codex/`、`.claude/`、`.openclaw/` 时，自动选择对应 Agent 配置目录
+- **目标目录覆盖变量**：支持通过 `SKILL_MANAGER_TARGET_DIR` 显式指定目标 Agent 配置根目录
+
+### 改进
+- 抽取 `scripts/target.sh` 作为安装、列表、卸载、更新脚本共用的目标目录识别模块
+- `list.sh`、`remove.sh`、`update.sh` 改为从调用目录识别目标，行为与 `install.sh` 保持一致
+- Skill 目录识别规则扩展到 `.codex` 和 `.openclaw` 子目录
+- 修正文档中的注册表路径说明为 `assets/skill-registry.json`
+
+### 修复
+- 修复安装记录时间戳使用 UTC 时间拼接本地时区偏移，导致显示时间偏早的问题
+
 ## [1.3.0] - 2026-04-08
 
 ### 新增

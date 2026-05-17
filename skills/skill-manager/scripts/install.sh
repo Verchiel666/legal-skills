@@ -1,16 +1,25 @@
 #!/bin/bash
 
 # Skill & Command Manager - Install Script
-# 安装或同步外部 skills/commands 到本地 .claude/
+# 安装或同步外部 skills/commands 到本地 Agent 配置目录
 
 set -e
 
 SOURCE="$1"
-# 保存调用者的原始工作目录（关键：用于定位项目 .claude 目录）
+# 保存调用者的原始工作目录（关键：用于定位项目 Agent 配置目录）
 ORIGINAL_PWD="$PWD"
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANAGER_DIR="$(dirname "$SCRIPT_DIR")"
+TARGET_HELPER="$SCRIPT_DIR/target.sh"
+
+if [ -f "$TARGET_HELPER" ]; then
+    # shellcheck source=target.sh
+    source "$TARGET_HELPER"
+else
+    echo "❌ 错误: 找不到目标目录识别模块: $TARGET_HELPER"
+    exit 1
+fi
 
 # 安装记录函数 - 记录 Skill 安装到注册表
 record_install() {
@@ -40,8 +49,8 @@ detect_source_type() {
         fi
     # 如果是目录
     elif [ -d "$src" ]; then
-        # 优先检查是否为 skill（包含 SKILL.md 等）
-        if [ -f "$src/SKILL.md" ] || [ -f "$src/skill.md" ] || [ -d "$src/.claude" ]; then
+        # 优先检查是否为 skill（包含 SKILL.md 或 Agent 配置目录等）
+        if [ -f "$src/SKILL.md" ] || [ -f "$src/skill.md" ] || [ -d "$src/.codex" ] || [ -d "$src/.claude" ] || [ -d "$src/.openclaw" ]; then
             echo "skill"
         # 检查是否为 command 集合目录（包含多个 .md 文件，但不包含 SKILL.md）
         else
@@ -58,76 +67,11 @@ detect_source_type() {
 }
 
 # 检测目标目录（支持 skills 和 commands）
-# 优先从当前工作目录查找 .claude，适用于在项目内调用
-# 特殊规则：当在 ~/.openclaw/ 目录下时，使用 ~/.openclaw/skills/ 作为目标
-find_claude_dir() {
-    # 首先尝试从调用者的原始工作目录查找（项目本地）
-    local current="$ORIGINAL_PWD"
-    local current_name="$(basename "$current")"
-    local max_iterations=10
-    local iteration=0
-
-    # 获取用户主目录
-    local home_dir="${HOME:-/Users/${USER}}"
-
-    # 特殊规则：检测是否在 ~/.openclaw/ 目录下
-    # 如果是，使用 ~/.openclaw/skills/ 作为目标目录
-    # 注意：返回 ~/.openclaw/ 而不是 ~/.openclaw/skills/，因为后续会自动拼接 /skills
-    if [[ "$current" == "$home_dir/.openclaw"* ]]; then
-        # 在 openclaw 目录下，直接使用 openclaw 目录本身
-        echo "$home_dir/.openclaw"
-        return 0
-    fi
-
-    # 如果当前目录本身就是 .claude，直接使用
-    if [ "$current_name" = ".claude" ]; then
-        echo "$current"
-        return 0
-    fi
-
-    # 如果当前目录包含 skills 子目录，说明当前目录就是 .claude 目录
-    if [ -d "$current/skills" ]; then
-        echo "$current"
-        return 0
-    fi
-
-    while [ $iteration -lt $max_iterations ]; do
-        # 检查当前目录是否包含 .claude 子目录
-        if [ -d "$current/.claude" ]; then
-            echo "$current/.claude"
-            return 0
-        fi
-
-        # 检查当前目录的父目录是否是 .claude
-        local parent="$(dirname "$current")"
-        local parent_name="$(basename "$parent")"
-
-        if [ "$parent_name" = ".claude" ]; then
-            echo "$parent"
-            return 0
-        fi
-
-        # 检查父目录是否是 skills 或 commands
-        if [ "$parent_name" = "skills" ] || [ "$parent_name" = "commands" ]; then
-            local grandparent="$(dirname "$parent")"
-            local grandparent_name="$(basename "$grandparent")"
-            if [ "$grandparent_name" = ".claude" ]; then
-                echo "$grandparent"
-                return 0
-            fi
-        fi
-
-        current="$parent"
-        ((iteration++))
-    done
-
-    # 如果没找到，返回默认值（使用当前工作目录）
-    echo "$PWD/.claude"
-}
-
-CLAUDE_DIR="$(find_claude_dir)"
-SKILLS_DIR="$CLAUDE_DIR/skills"
-COMMANDS_DIR="$CLAUDE_DIR/commands"
+# 优先从调用目录向上查找 .codex/.claude/.openclaw。
+SCRIPT_AGENT_DIR="$(find_agent_config_dir "$MANAGER_DIR" "$PWD/.claude")"
+AGENT_DIR="$(find_agent_config_dir "$ORIGINAL_PWD" "$SCRIPT_AGENT_DIR")"
+SKILLS_DIR="$AGENT_DIR/skills"
+COMMANDS_DIR="$AGENT_DIR/commands"
 
 # 根据 source 类型确定目标目录
 if [ -f "$SOURCE" ] && [[ "$SOURCE" =~ \.md$ ]]; then
@@ -161,7 +105,7 @@ is_skills_collection() {
 
     for item in "$dir"/*; do
         if [ -d "$item" ]; then
-            if [ -f "$item/SKILL.md" ] || [ -f "$item/skill.md" ] || [ -d "$item/.claude" ]; then
+            if [ -f "$item/SKILL.md" ] || [ -f "$item/skill.md" ] || [ -d "$item/.codex" ] || [ -d "$item/.claude" ] || [ -d "$item/.openclaw" ]; then
                 ((found_skills++))
             fi
         fi
@@ -177,7 +121,7 @@ is_commands_collection() {
     local found_commands=0
 
     # 如果目录包含 SKILL.md，则不是 commands 集合
-    if [ -f "$dir/SKILL.md" ] || [ -f "$dir/skill.md" ] || [ -d "$dir/.claude" ]; then
+    if [ -f "$dir/SKILL.md" ] || [ -f "$dir/skill.md" ] || [ -d "$dir/.codex" ] || [ -d "$dir/.claude" ] || [ -d "$dir/.openclaw" ]; then
         return 1
     fi
 
@@ -295,7 +239,7 @@ if [ "$SOURCE_TYPE" = "local" ]; then
             if [ -d "$skill_dir" ]; then
                 skill_name=$(basename "$skill_dir")
 
-                if [ -f "$skill_dir/SKILL.md" ] || [ -f "$skill_dir/skill.md" ] || [ -d "$skill_dir/.claude" ]; then
+                if [ -f "$skill_dir/SKILL.md" ] || [ -f "$skill_dir/skill.md" ] || [ -d "$skill_dir/.codex" ] || [ -d "$skill_dir/.claude" ] || [ -d "$skill_dir/.openclaw" ]; then
                     echo "▶ 安装 skill: $skill_name"
 
                     target_path="$TARGET_DIR/../skills/$skill_name"

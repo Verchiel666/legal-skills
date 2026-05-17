@@ -9,7 +9,7 @@ import os
 import sys
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -25,21 +25,9 @@ EXAMPLE_FILE = ASSETS_DIR / "skill-registry.example.json"
 ASSETS_DIR.mkdir(exist_ok=True)
 
 
-def get_local_timezone():
-    """获取当前时区偏移"""
-    now = datetime.now()
-    offset = now.strftime('%z')
-    # 转换为 +08:00 格式
-    if offset:
-        if len(offset) == 5:
-            return f"{offset[:3]}:{offset[3:]}"
-    return "+08:00"
-
-
 def get_current_timestamp():
     """获取当前时间戳 (ISO 8601 格式)"""
-    tz = get_local_timezone()
-    return datetime.now(timezone.utc).strftime(f'%Y-%m-%dT%H:%M:%S{tz}')
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def load_registry() -> dict:

@@ -2,19 +2,19 @@
 name: skill-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.3.0"
-description: 管理 Claude Code Skills 的安装、版本追踪和更新检查。支持从本地路径或 GitHub 仓库安装，自动记录每个 Skill 的安装时间、来源 URL 和版本号。自动检测 GitHub 上有更新的 Skill，并显示版本变更内容。
+version: "1.4.0"
+description: 管理 Claude Code、Codex 和 OpenClaw Skills 的安装、版本追踪和更新检查。支持从本地路径或 GitHub 仓库安装，自动识别 .codex/.claude/.openclaw 目标目录，记录每个 Skill 的安装时间、来源 URL 和版本号，并检查 GitHub 更新。
 license: Complete terms in LICENSE.txt
 ---
 
 # Skill Manager
 
-管理 Claude Code Skills 和 Commands 的安装、同步、卸载和列表查看。
+管理 Claude Code、Codex 和 OpenClaw Skills/Commands 的安装、同步、卸载和列表查看。
 
 ## 前置条件
 
 - Git 已安装（用于 GitHub 克隆）
-- 有写入 `.claude/skills/` 和 `.claude/commands/` 目录的权限
+- 有写入目标 Agent 配置目录的权限，例如 `.codex/skills/`、`.claude/skills/`、`.openclaw/skills/`
 
 ## 安装行为
 
@@ -22,6 +22,15 @@ license: Complete terms in LICENSE.txt
 - **本地路径 (Command)** → 符号链接（保持与源同步）
 - **本地集合目录** → 批量符号链接
 - **GitHub 仓库/子目录** → 克隆后删除 .git（静态复制）+ 自动安全检查
+
+## 目标目录识别
+
+执行安装、列表、卸载、更新时，脚本会从调用目录向上查找 Agent 配置目录：
+
+- 在 `/Users/maoking/.codex` 或其子目录调用时，目标为 `/Users/maoking/.codex/skills/`
+- 在项目根目录包含 `.codex/`、`.claude/` 或 `.openclaw/` 时，目标为对应配置目录下的 `skills/` 或 `commands/`
+- 在 `.codex/skills/`、`.claude/skills/`、`.openclaw/skills/` 内调用时，目标为其上级配置目录
+- 如需显式指定目标根目录，可设置 `SKILL_MANAGER_TARGET_DIR=/path/to/.codex`
 
 ## 支持的来源类型
 
@@ -89,7 +98,7 @@ scripts/install.sh jgtolentino/insightpulse-odoo/main/docs/claude-code-skills/co
 scripts/list.sh
 ```
 
-显示 `.claude/skills/` 和 `.claude/commands/` 目录下所有已安装的 items 及其类型（符号链接或克隆）。
+显示当前识别到的 Agent 配置目录下所有已安装的 items 及其类型（符号链接或克隆）。
 
 ### 卸载
 
@@ -120,7 +129,7 @@ scripts/check.sh
 - ✅ 已是最新版本的 Skills
 - ⚠️ 检查失败的 Skills（无来源信息等）
 
-每次安装和更新都会自动记录到 `data/skill-registry.json`。
+每次安装和更新都会自动记录到 `assets/skill-registry.json`。
 
 ### 查看已安装记录
 
@@ -140,7 +149,7 @@ python3 scripts/record.py list
 一个目录被视为有效的 skill 目录，如果它包含：
 - `SKILL.md` 文件（标准 skill）
 - 或 `skill.md` 文件（变体）
-- 或 `.claude` 子目录
+- 或 `.codex` / `.claude` / `.openclaw` 子目录
 
 ### Command 文件规则
 - 文件扩展名为 `.md`
@@ -159,6 +168,10 @@ skill-manager install ~/dev/my-skills/pdf-tool
 # 批量安装本地目录下的所有 skills
 skill-manager install ~/dev/my-skills/
 skill-manager install ../other-project/.claude/skills/
+
+# 在 Codex 全局目录中调用时，安装到 ~/.codex/skills/
+cd /Users/maoking/.codex
+skill-manager install ~/dev/my-skills/pdf-tool
 
 # 从 GitHub 仓库根目录安装
 skill-manager install https://github.com/anthropics/claude-code
@@ -230,6 +243,7 @@ skill-manager/
 │   ├── remove.sh               # 卸载脚本
 │   ├── update.sh               # 更新脚本
 │   ├── check.sh                # 更新检查脚本
+│   ├── target.sh               # Agent 配置目录识别模块
 │   ├── record.py               # 记录管理模块
 │   └── security.py             # 安全检查模块
 └── assets/                     # 资源文件

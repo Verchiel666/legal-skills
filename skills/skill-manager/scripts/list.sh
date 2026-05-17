@@ -3,55 +3,24 @@
 # Skill & Command Manager - List Script
 # 列出已安装的 skills 和 commands
 
+ORIGINAL_PWD="$PWD"
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANAGER_DIR="$(dirname "$SCRIPT_DIR")"
+TARGET_HELPER="$SCRIPT_DIR/target.sh"
 
-# 查找 .claude 目录
-# 特殊规则：当在 ~/.openclaw/ 目录下时，使用 ~/.openclaw/ 作为目标
-find_claude_dir() {
-    local current="$MANAGER_DIR"
-    local max_iterations=10
-    local iteration=0
+if [ -f "$TARGET_HELPER" ]; then
+    # shellcheck source=target.sh
+    source "$TARGET_HELPER"
+else
+    echo "❌ 错误: 找不到目标目录识别模块: $TARGET_HELPER"
+    exit 1
+fi
 
-    # 获取用户主目录
-    local home_dir="${HOME:-/Users/${USER}}"
-
-    # 特殊规则：检测是否在 ~/.openclaw/ 目录下
-    # 如果是，使用 ~/.openclaw/ 作为目标目录
-    if [[ "$current" == "$home_dir/.openclaw"* ]]; then
-        echo "$home_dir/.openclaw"
-        return 0
-    fi
-
-    while [ $iteration -lt $max_iterations ]; do
-        local parent="$(dirname "$current")"
-        local parent_name="$(basename "$parent")"
-
-        if [ "$parent_name" = ".claude" ]; then
-            echo "$parent"
-            return 0
-        fi
-
-        if [ "$parent_name" = "skills" ] || [ "$parent_name" = "commands" ]; then
-            local grandparent="$(dirname "$parent")"
-            local grandparent_name="$(basename "$grandparent")"
-            if [ "$grandparent_name" = ".claude" ]; then
-                echo "$grandparent"
-                return 0
-            fi
-        fi
-
-        current="$parent"
-        ((iteration++))
-    done
-
-    echo "$(dirname "$MANAGER_DIR")/../.claude"
-}
-
-CLAUDE_DIR="$(find_claude_dir)"
-SKILLS_DIR="$CLAUDE_DIR/skills"
-COMMANDS_DIR="$CLAUDE_DIR/commands"
+SCRIPT_AGENT_DIR="$(find_agent_config_dir "$MANAGER_DIR" "$PWD/.claude")"
+AGENT_DIR="$(find_agent_config_dir "$ORIGINAL_PWD" "$SCRIPT_AGENT_DIR")"
+SKILLS_DIR="$AGENT_DIR/skills"
+COMMANDS_DIR="$AGENT_DIR/commands"
 
 # 列出 skills
 list_skills() {
