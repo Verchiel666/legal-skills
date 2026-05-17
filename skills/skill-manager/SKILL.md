@@ -2,7 +2,7 @@
 name: skill-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.4.0"
+version: "1.5.0"
 description: 管理 Claude Code、Codex 和 OpenClaw Skills 的安装、版本追踪和更新检查。支持从本地路径或 GitHub 仓库安装，自动识别 .codex/.claude/.openclaw 目标目录，记录每个 Skill 的安装时间、来源 URL 和版本号，并检查 GitHub 更新。
 license: Complete terms in LICENSE.txt
 ---
@@ -124,7 +124,12 @@ scripts/update.sh [name]
 scripts/check.sh
 ```
 
-检查所有已安装 Skills 的最新版本，对比当前安装版本，显示：
+检查所有远程安装 Skills 的更新状态，检测策略：
+- **有版本号** → 直接比较本地与远程版本号
+- **无版本号** → 检查远程仓库最近 Commits，与安装时间对比
+- **子目录安装** → 精确检查 Skill 所在子目录的 Commits
+
+显示：
 - 📦 有可用更新的 Skills
 - ✅ 已是最新版本的 Skills
 - ⚠️ 检查失败的 Skills（无来源信息等）
@@ -229,6 +234,28 @@ python3 scripts/record.py list
 - 检查发现问题不会阻止安装，仅输出警告报告
 - 建议在安装外部 skill 后仔细阅读安全报告
 
+## 注册表 Schema
+
+每个已安装的 Skill 记录在 `assets/skill-registry.json` 中，包含以下字段：
+
+| 字段 | 说明 |
+|------|------|
+| `name` | Skill 目录名 |
+| `source` | 原始安装来源（本地路径或 GitHub URL） |
+| `install_type` | `"local"`（符号链接）或 `"remote"`（GitHub 克隆） |
+| `installed_at` | 初始安装时间（ISO 8601） |
+| `last_updated` | 最后版本更新时间 |
+| `last_check_at` | 最后一次更新检查时间（仅远程） |
+| `installed_version` | 安装时的版本号 |
+| `current_version` | 当前已安装版本 |
+| `latest_version` | 远程最新版本 |
+| `install_commit` | 安装时的 Git commit hash（仅远程） |
+| `install_branch` | 安装时使用的 Git branch（仅远程） |
+| `remote_url` | 完整 GitHub URL，含子目录路径（仅远程） |
+| `remote_subpath` | Skill 在仓库中的子路径（仅子目录安装） |
+| `description` | Skill 描述 |
+| `homepage` | 主页 URL |
+
 ## 目录结构
 
 ```
@@ -243,6 +270,7 @@ skill-manager/
 │   ├── remove.sh               # 卸载脚本
 │   ├── update.sh               # 更新脚本
 │   ├── check.sh                # 更新检查脚本
+│   ├── auto-check.sh           # 定期自动检查触发器
 │   ├── target.sh               # Agent 配置目录识别模块
 │   ├── record.py               # 记录管理模块
 │   └── security.py             # 安全检查模块

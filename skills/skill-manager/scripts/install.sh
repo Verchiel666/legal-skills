@@ -26,12 +26,12 @@ record_install() {
     local skill_name="$1"
     local source_url="$2"
     local target_path="$3"
-    
+
     # 调用 Python 记录模块
     if command -v python3 &> /dev/null; then
         RECORD_SCRIPT="$SCRIPT_DIR/record.py"
         if [ -f "$RECORD_SCRIPT" ]; then
-            python3 "$RECORD_SCRIPT" install "$skill_name" "$source_url" --path "$target_path" 2>/dev/null || true
+            python3 "$RECORD_SCRIPT" install "$skill_name" "$source_url" --path "$target_path" --install-type local 2>/dev/null || true
         fi
     fi
 }
@@ -375,6 +375,10 @@ if [ "$SOURCE_TYPE" = "github-subdir" ]; then
     }
     git checkout "${BRANCH:-main}" -q
 
+    # 捕获 commit hash 和 branch
+    INSTALL_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+    INSTALL_BRANCH="${BRANCH:-main}"
+
     cd - > /dev/null
 
     # 移动到目标位置
@@ -382,6 +386,20 @@ if [ "$SOURCE_TYPE" = "github-subdir" ]; then
     rm -rf "$TEMP_DIR"
 
     echo "✓ 已安装: $TARGET_PATH"
+
+    # 记录安装（修复：子目录安装之前缺少记录）
+    if command -v python3 &> /dev/null; then
+        RECORD_SCRIPT="$SCRIPT_DIR/record.py"
+        if [ -f "$RECORD_SCRIPT" ]; then
+            python3 "$RECORD_SCRIPT" install "$SKILL_NAME" "$CLONE_URL" \
+                --path "$TARGET_PATH" \
+                --install-type remote \
+                --install-commit "$INSTALL_COMMIT" \
+                --install-branch "$INSTALL_BRANCH" \
+                --remote-url "$CLONE_URL/tree/${BRANCH:-main}/$SUBPATH" \
+                --remote-subpath "$SUBPATH" 2>/dev/null || true
+        fi
+    fi
 
 elif [ "$SOURCE_TYPE" = "github" ]; then
     # GitHub 仓库 - 直接克隆
@@ -394,13 +412,27 @@ elif [ "$SOURCE_TYPE" = "github" ]; then
         exit 1
     }
 
+    # 捕获 commit hash 和 branch（在删除 .git 之前）
+    INSTALL_COMMIT=$(cd "$TARGET_PATH" && git rev-parse --short HEAD 2>/dev/null || echo "")
+    INSTALL_BRANCH=$(cd "$TARGET_PATH" && git branch --show-current 2>/dev/null || echo "main")
+
     # 删除 .git 目录
     rm -rf "$TARGET_PATH/.git"
 
     echo "✓ 已安装: $TARGET_PATH"
-    
-    # 记录安装
-    record_install "$SKILL_NAME" "$CLONE_URL" "$TARGET_PATH"
+
+    # 记录安装（含完整远程元数据）
+    if command -v python3 &> /dev/null; then
+        RECORD_SCRIPT="$SCRIPT_DIR/record.py"
+        if [ -f "$RECORD_SCRIPT" ]; then
+            python3 "$RECORD_SCRIPT" install "$SKILL_NAME" "$CLONE_URL" \
+                --path "$TARGET_PATH" \
+                --install-type remote \
+                --install-commit "$INSTALL_COMMIT" \
+                --install-branch "$INSTALL_BRANCH" \
+                --remote-url "$CLONE_URL" 2>/dev/null || true
+        fi
+    fi
 fi
 
 # 安全检查（仅 GitHub 来源）

@@ -1,5 +1,23 @@
 # 变更日志
 
+## [1.5.0] - 2026-05-17
+
+### 新增
+- **远程安装元数据追踪**：注册表新增 `install_type`、`install_commit`、`install_branch`、`remote_url`、`remote_subpath` 字段，记录 GitHub 安装的完整上下文
+- **智能更新检测**：双策略检测远程 Skill 更新 — 有版本号时比较版本，无版本号时检查 Commits 与安装时间对比
+- **子目录精确追踪**：GitHub 子目录安装时记录完整子路径，commit 检查精确到 Skill 所在子目录
+- **可配置检查间隔**：通过 `SKILL_MANAGER_CHECK_THRESHOLD` 环境变量自定义自动检查间隔（默认 7 天）
+- **向后兼容迁移**：旧注册表条目自动填充新字段默认值
+
+### 修复
+- **GitHub 子目录安装缺少记录**：修复从 GitHub 子目录安装时未调用 `record_install` 的问题
+- **GitHub Commits 抓取**：修复 `get_github_commits()` 因 GitHub 页面结构变更导致无法获取 commit 的问题
+
+### 改进
+- `install.sh` 在删除 `.git` 前捕获 commit hash 和 branch
+- `check-all` 跳过本地安装的 Skill（符号链接自动同步，无需远程检查），仅检查远程安装的 Skill
+- `record.py list` 显示安装类型、commit、branch 等新增字段
+
 ## [1.4.0] - 2026-05-17
 
 ### 新增

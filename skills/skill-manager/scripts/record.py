@@ -9,6 +9,7 @@ import os
 import sys
 import re
 import subprocess
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -30,30 +31,50 @@ def get_current_timestamp():
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _migrate_entry(name: str, entry: dict) -> dict:
+    """为旧条目填充缺失的新字段"""
+    source = entry.get("source", "")
+    if "install_type" not in entry:
+        if "github.com" in source or ("/" in source and not source.startswith("/") and not source.startswith("~")):
+            entry["install_type"] = "remote"
+        else:
+            entry["install_type"] = "local"
+    if "install_commit" not in entry:
+        entry["install_commit"] = None
+    if "install_branch" not in entry:
+        entry["install_branch"] = None
+    if "remote_url" not in entry:
+        entry["remote_url"] = None
+    if "remote_subpath" not in entry:
+        entry["remote_subpath"] = None
+    if "last_check_at" not in entry:
+        entry["last_check_at"] = None
+    return entry
+
+
 def load_registry() -> dict:
-    """加载 Skill 注册表"""
+    """加载 Skill 注册表（自动迁移旧条目）"""
     if REGISTRY_FILE.exists():
         try:
             with open(REGISTRY_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # 过滤掉 _note 等元数据字段
-                return {k: v for k, v in data.items() if not k.startswith('_')}
+                registry = {k: _migrate_entry(k, v) for k, v in data.items() if not k.startswith('_')}
+                return registry
         except (json.JSONDecodeError, IOError):
             pass
-    
+
     # 如果注册表不存在，尝试从示例文件初始化
     if EXAMPLE_FILE.exists():
         try:
             with open(EXAMPLE_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # 过滤掉 _note 等元数据字段
-                registry = {k: v for k, v in data.items() if not k.startswith('_')}
+                registry = {k: _migrate_entry(k, v) for k, v in data.items() if not k.startswith('_')}
                 if registry:
                     save_registry(registry)
                     return registry
         except (json.JSONDecodeError, IOError):
             pass
-    
+
     return {}
 
 
@@ -126,17 +147,25 @@ def get_skill_info(skill_path: Path) -> dict:
 
 
 def parse_github_url(url: str) -> Optional[tuple]:
-    """解析 GitHub URL，返回 (owner, repo, path)"""
+    """解析 GitHub URL，返回 (owner, repo, subpath)
+
+    支持格式:
+    - https://github.com/owner/repo
+    - https://github.com/owner/repo/tree/branch/path/to/skill
+    - owner/repo
+    - owner/repo/branch/path/to/skill
+    """
     if not url:
         return None
-    
-    # 处理简写格式 owner/repo
+
+    # 处理简写格式 owner/repo[/branch/path]
     if '/' in url and not url.startswith('http'):
         parts = url.split('/')
         if len(parts) >= 2:
-            return (parts[0], parts[1], None)
+            subpath = '/'.join(parts[2:]) if len(parts) > 2 else None
+            return (parts[0], parts[1], subpath)
         return None
-    
+
     # 处理完整 URL
     parsed = urlparse(url)
     if 'github.com' in parsed.netloc:
@@ -144,9 +173,18 @@ def parse_github_url(url: str) -> Optional[tuple]:
         if len(path_parts) >= 2:
             owner = path_parts[0]
             repo = path_parts[1].replace('.git', '')
-            path = '/'.join(path_parts[2:]) if len(path_parts) > 2 else None
-            return (owner, repo, path)
-    
+            # 处理 /tree/branch/subpath 格式
+            if len(path_parts) >= 5 and path_parts[2] == 'tree':
+                subpath = '/'.join(path_parts[4:])
+                return (owner, repo, subpath if subpath else None)
+            # 处理 /blob/branch/subpath 格式
+            elif len(path_parts) >= 5 and path_parts[2] == 'blob':
+                subpath = '/'.join(path_parts[4:])
+                return (owner, repo, subpath if subpath else None)
+            else:
+                subpath = '/'.join(path_parts[2:]) if len(path_parts) > 2 else None
+                return (owner, repo, subpath)
+
     return None
 
 
@@ -188,48 +226,37 @@ def get_github_commits(owner: str, repo: str, branch: str = "main", skill_path: 
             url = f"https://github.com/{owner}/{repo}/commits/{branch}/{skill_path}"
         else:
             url = f"https://github.com/{owner}/{repo}/commits/{branch}"
-        
+
         html = fetch_webpage(url)
         if not html:
             return []
-        
+
         commits = []
-        
-        # 解析 commit 条目 - GitHub 的 HTML 结构
-        # 查找 commit 列表中的每个条目
-        commit_pattern = re.compile(
-            r'<a[^>]*href="/' + re.escape(owner) + r'/' + re.escape(repo) + r'/commit/([^"]+)"[^>]*>' +
-            r'[^<]*<svg[^>]*>[^<]*</svg>[^<]*<time[^>]*datetime="([^"]+)"',
+
+        # GitHub 在 <script type="application/json" data-target="react-app.embeddedData"> 中嵌入了 JSON
+        json_pattern = re.compile(
+            r'<script[^>]*data-target="react-app\.embeddedData"[^>]*>\s*(\{.*?\})\s*</script>',
             re.DOTALL
         )
-        
-        for match in commit_pattern.finditer(html):
-            commit_sha = match.group(1)[:7]  # 取前7位
-            commit_time = match.group(2)
-            commits.append({
-                "sha": commit_sha,
-                "time": commit_time,
-                "url": f"https://github.com/{owner}/{repo}/commit/{commit_sha}"
-            })
-            if len(commits) >= limit:
-                break
-        
-        # 如果上面没匹配到，尝试另一种模式
-        if not commits:
-            # 匹配 time 标签和 commit 标题
-            time_pattern = re.compile(r'<time[^>]*datetime="([^"]+)"[^>]*>.*?</time>.*?<a[^>]*class="[^*"]*message[^"]*"[^>]*>([^<]+)</a>', re.DOTALL)
-            for match in time_pattern.finditer(html):
-                commit_time = match.group(1)
-                commit_msg = match.group(2).strip()
-                commits.append({
-                    "sha": "unknown",
-                    "time": commit_time,
-                    "message": commit_msg,
-                    "url": url
-                })
-                if len(commits) >= limit:
-                    break
-        
+        match = json_pattern.search(html)
+        if match:
+            try:
+                payload = json.loads(match.group(1))
+                for group in payload.get("payload", {}).get("commitGroups", []):
+                    for c in group.get("commits", []):
+                        commit = {
+                            "sha": c.get("oid", "")[:7],
+                            "time": c.get("committedDate", ""),
+                            "message": c.get("shortMessage", ""),
+                            "url": f"https://github.com/{owner}/{repo}/commit/{c.get('oid', '')[:7]}"
+                        }
+                        if commit["sha"] and commit["sha"] not in [x["sha"] for x in commits]:
+                            commits.append(commit)
+                            if len(commits) >= limit:
+                                return commits
+            except (json.JSONDecodeError, KeyError):
+                pass
+
         return commits
     except Exception:
         return []
@@ -349,19 +376,35 @@ def get_local_skill_info(skill_path: Path) -> dict:
     return base_info
 
 
-def record_install(skill_name: str, source: str, skill_path: Path = None, action: str = "install"):
+def record_install(skill_name: str, source: str, skill_path: Path = None, action: str = "install",
+                   install_type: str = None, install_commit: str = None,
+                   install_branch: str = None, remote_url: str = None,
+                   remote_subpath: str = None):
     """记录 Skill 安装/更新"""
     registry = load_registry()
-    
+
+    # 自动推断 install_type
+    if not install_type:
+        if source and ("github.com" in source or ("/" in source and not source.startswith("/") and not source.startswith("~"))):
+            install_type = "remote"
+        else:
+            install_type = "local"
+
     info = {
         "name": skill_name,
         "source": source,
+        "install_type": install_type,
         "installed_at": get_current_timestamp(),
         "last_updated": get_current_timestamp(),
         "installed_version": None,
         "current_version": None,
         "description": None,
         "homepage": None,
+        "install_commit": install_commit,
+        "install_branch": install_branch,
+        "remote_url": remote_url or (source if install_type == "remote" else None),
+        "remote_subpath": remote_subpath,
+        "last_check_at": None,
     }
     
     # 如果有本地路径，读取 SKILL.md
@@ -408,10 +451,11 @@ def check_updates_for_skill(skill_name: str) -> dict:
     """检查单个 Skill 的更新状态"""
     registry = load_registry()
     skill_info = registry.get(skill_name, {})
-    
+
     source = skill_info.get("source")
     current_version = skill_info.get("current_version")
-    
+    installed_at = skill_info.get("installed_at")
+
     result = {
         "name": skill_name,
         "source": source,
@@ -423,53 +467,219 @@ def check_updates_for_skill(skill_name: str) -> dict:
         "last_modified": None,
         "error": None,
     }
-    
+
     if not source:
         result["error"] = "无来源信息"
         return result
-    
+
     # 解析 GitHub 来源
-    gh_info = parse_github_url(source)
+    # 优先使用 remote_subpath（精确到 Skill 子目录），其次解析 remote_url
+    remote_url = skill_info.get("remote_url") or source
+    remote_subpath = skill_info.get("remote_subpath")
+
+    gh_info = parse_github_url(remote_url)
     if not gh_info:
         result["error"] = "无法解析来源"
         return result
-    
-    owner, repo, subpath = gh_info
-    
-    # 获取远程版本
+
+    owner, repo, url_subpath = gh_info
+    # 使用精确的 subpath：remote_subpath > URL 解析 > None
+    subpath = remote_subpath or url_subpath
+
+    # 策略 1: 有版本号 → 比较版本
     remote_version, fetch_time = get_github_skill_version(owner, repo, skill_path=subpath)
-    if remote_version:
+    if remote_version and current_version:
         result["latest_version"] = remote_version
         result["has_update"] = remote_version != current_version
-    
-    # 尝试获取 changelog
+
+    # 策略 2: 无版本号 → 检查最近 commits 是否有新于安装时间的
+    if not result["has_update"] and not current_version:
+        commits = get_github_commits(owner, repo, skill_path=subpath)
+        if commits and installed_at:
+            try:
+                installed_dt = datetime.fromisoformat(installed_at)
+                for c in commits:
+                    commit_time = c.get("time", "")
+                    if commit_time:
+                        commit_dt = datetime.fromisoformat(commit_time.replace("Z", "+00:00"))
+                        # commit 时间晚于安装时间 → 有更新
+                        if commit_dt > installed_dt:
+                            result["has_update"] = True
+                            break
+            except (ValueError, TypeError):
+                # 时间解析失败，有 commits 就认为可能有更新
+                if commits:
+                    result["has_update"] = True
+        if commits:
+            result["commits"] = commits
+
+    # 补充信息：changelog 和最后修改时间
     changelog = get_github_changelog(owner, repo, skill_path=subpath)
     if changelog:
         result["changelog"] = changelog
-    
-    # 获取最近的 commits（如果没有 changelog 或作为补充）
-    commits = get_github_commits(owner, repo, skill_path=subpath)
-    if commits:
-        result["commits"] = commits
-    
-    # 获取最后修改时间
+
+    # 如果策略 1 没获取到 commits（有版本号时也要获取 commits 作为补充信息）
+    if not result["commits"]:
+        commits = get_github_commits(owner, repo, skill_path=subpath)
+        if commits:
+            result["commits"] = commits
+
     last_modified = get_github_last_modified(owner, repo, skill_path=subpath)
     if last_modified:
         result["last_modified"] = last_modified
-    
+
+    # 更新 last_check_at
+    now = get_current_timestamp()
+    reg = load_registry()
+    if skill_name in reg:
+        reg[skill_name]["last_check_at"] = now
+        if remote_version:
+            reg[skill_name]["latest_version"] = remote_version
+        save_registry(reg)
+    result["last_check_at"] = now
+
     return result
 
 
 def check_all_updates() -> list:
-    """检查所有已安装 Skill 的更新状态"""
+    """检查所有已安装 Skill 的更新状态（仅远程安装的 Skill 检查远程更新）"""
     registry = load_registry()
     results = []
-    
-    for skill_name in registry:
+
+    for skill_name, entry in registry.items():
+        install_type = entry.get("install_type", "local")
+        source = entry.get("source", "")
+        is_remote = install_type == "remote" or "github.com" in source
+
+        if is_remote:
+            result = check_updates_for_skill(skill_name)
+            results.append(result)
+        else:
+            # 本地 Skill（符号链接）自动同步，无需远程检查
+            results.append({
+                "name": skill_name,
+                "source": source,
+                "current_version": entry.get("current_version"),
+                "latest_version": entry.get("current_version"),
+                "has_update": False,
+                "changelog": None,
+                "commits": [],
+                "last_modified": None,
+                "error": None,
+                "skipped": True,
+            })
+
+    return results
+
+
+DEFAULT_STALE_THRESHOLD_DAYS = 7
+
+
+def check_stale_remote_skills(threshold_days: int = DEFAULT_STALE_THRESHOLD_DAYS) -> list:
+    """检查超过阈值的远程 Skill 更新状态"""
+    registry = load_registry()
+    results = []
+    now = datetime.now().astimezone()
+
+    for skill_name, entry in registry.items():
+        source = entry.get("source", "")
+        install_type = entry.get("install_type", "local")
+        is_remote = install_type == "remote" or "github.com" in source
+        if not is_remote:
+            continue
+
+        last_check = entry.get("last_check_at")
+        if last_check:
+            try:
+                last_check_dt = datetime.fromisoformat(last_check)
+                days_since = (now - last_check_dt).days
+                if days_since < threshold_days:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
         result = check_updates_for_skill(skill_name)
         results.append(result)
-    
+
     return results
+
+
+def summarize_updates(result: dict) -> str:
+    """将更新检测结果总结为一段简明的更新摘要"""
+    commits = result.get("commits", [])
+    changelog = result.get("changelog")
+    current = result.get("current_version")
+    latest = result.get("latest_version")
+
+    parts = []
+
+    # 版本变化
+    if current and latest and current != latest:
+        parts.append(f"版本 {current} → {latest}")
+
+    # 从 changelog 提取最新版本的更新说明
+    changelog_extracted = False
+    if changelog:
+        sections = re.split(r'^##\s', changelog, maxsplit=2)
+        if len(sections) > 1:
+            latest_section = sections[1]
+            summary_lines = []
+            for line in latest_section.split('\n'):
+                line = line.strip().lstrip('- ').strip()
+                if line and not line.startswith('#') and not line.startswith('['):
+                    summary_lines.append(line)
+                    if len(summary_lines) >= 3:
+                        break
+            if summary_lines:
+                parts.append('；'.join(summary_lines))
+                changelog_extracted = True
+
+    # 从 commits 生成摘要（仅在 changelog 未提取到内容时）
+    if commits and not changelog_extracted:
+        summaries = []
+        for c in commits[:5]:
+            msg = c.get("message", "")
+            if not msg:
+                continue
+            if msg.startswith("Merge pull request"):
+                continue
+            msg = msg.split('\n')[0]
+            msg = re.sub(r'^(feat|fix|docs|chore|refactor|perf|test|ci|build|style)(\([^)]*\))?:\s*', '', msg)
+            if msg:
+                summaries.append(msg[:50])
+        if summaries:
+            parts.append('；'.join(summaries))
+
+    # 兜底：只说有多少新 commit
+    if not parts and commits:
+        parts.append(f"安装后有 {len(commits)} 个新提交")
+
+    return '，'.join(parts) if parts else "检测到远程更新"
+
+
+def format_recommendation_report(results: list) -> str:
+    """格式化更新推荐报告（仅对有更新的 skill 输出）"""
+    has_update = [r for r in results if r.get("has_update")]
+    if not has_update:
+        return ""
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append("Skill 更新推荐")
+    lines.append("=" * 60)
+    lines.append("")
+
+    for r in has_update:
+        lines.append(f"  * {r['name']}")
+        # 更新摘要
+        summary = summarize_updates(r)
+        lines.append(f"    {summary}")
+        if r.get("source"):
+            lines.append(f"    更新: skill-manager install {r['source']}")
+        lines.append("")
+
+    lines.append("=" * 60)
+    return "\n".join(lines)
 
 
 def format_version_list(updates: list) -> str:
@@ -485,7 +695,8 @@ def format_version_list(updates: list) -> str:
     
     # 按状态分组
     has_update = [u for u in updates if u.get("has_update")]
-    up_to_date = [u for u in updates if not u.get("has_update") and not u.get("error")]
+    up_to_date = [u for u in updates if not u.get("has_update") and not u.get("error") and not u.get("skipped")]
+    local_skills = [u for u in updates if u.get("skipped")]
     errors = [u for u in updates if u.get("error")]
     
     if has_update:
@@ -493,22 +704,8 @@ def format_version_list(updates: list) -> str:
         lines.append("-" * 40)
         for u in has_update:
             lines.append(f"  • {u['name']}")
-            lines.append(f"    当前: {u.get('current_version', '未知')}")
-            lines.append(f"    最新: {u.get('latest_version', '未知')}")
-            if u.get("last_modified"):
-                lines.append(f"    更新于: {u['last_modified'][:10]}")
-            
-            # 显示 changelog 或 commits
-            if u.get("changelog"):
-                # 截取 changelog 前 200 字符
-                changelog_preview = u["changelog"][:200].split('\n')[0]
-                lines.append(f"    更新内容: {changelog_preview}...")
-            elif u.get("commits"):
-                # 显示最近的 commits
-                lines.append(f"    最近更新:")
-                for i, commit in enumerate(u["commits"][:3]):
-                    msg = commit.get("message", commit.get("sha", ""))
-                    lines.append(f"      {i+1}. {msg[:60]}{'...' if len(msg) > 60 else ''}")
+            summary = summarize_updates(u)
+            lines.append(f"    {summary}")
             lines.append("")
     
     if up_to_date:
@@ -524,7 +721,15 @@ def format_version_list(updates: list) -> str:
         for u in errors:
             lines.append(f"  • {u['name']}: {u.get('error')}")
         lines.append("")
-    
+
+    if local_skills:
+        lines.append("🔗 本地安装（自动同步，无需检查）:")
+        lines.append("-" * 40)
+        for u in local_skills:
+            ver = u.get('current_version', '?')
+            lines.append(f"  • {u['name']}" + (f" (v{ver})" if ver else ""))
+        lines.append("")
+
     lines.append("=" * 60)
     
     return "\n".join(lines)
@@ -550,9 +755,10 @@ def main():
     """主入口"""
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  record.py install <skill_name> <source> [--path <path>]")
+        print("  record.py install <skill_name> <source> [--path <path>] [--install-type <type>] [--install-commit <hash>] [--install-branch <branch>] [--remote-url <url>]")
         print("  record.py check <skill_name>")
         print("  record.py check-all")
+        print("  record.py auto-check [--threshold <days>]")
         print("  record.py list")
         print("  record.py update <skill_name> [--from <version>] [--to <version>]")
         sys.exit(1)
@@ -560,22 +766,52 @@ def main():
     command = sys.argv[1]
     
     if command == "install":
-        # record.py install <skill_name> <source> [--path <path>]
+        # record.py install <skill_name> <source> [--path <path>] [--install-type <type>] [--install-commit <hash>] [--install-branch <branch>] [--remote-url <url>] [--remote-subpath <path>]
         skill_name = sys.argv[2] if len(sys.argv) > 2 else None
         source = sys.argv[3] if len(sys.argv) > 3 else None
         path = None
-        
+        install_type = None
+        install_commit = None
+        install_branch = None
+        remote_url = None
+        remote_subpath = None
+
         for i, arg in enumerate(sys.argv):
             if arg == "--path" and len(sys.argv) > i + 1:
                 path = Path(sys.argv[i + 1])
-        
+            elif arg == "--install-type" and len(sys.argv) > i + 1:
+                install_type = sys.argv[i + 1]
+            elif arg == "--install-commit" and len(sys.argv) > i + 1:
+                install_commit = sys.argv[i + 1]
+            elif arg == "--install-branch" and len(sys.argv) > i + 1:
+                install_branch = sys.argv[i + 1]
+            elif arg == "--remote-url" and len(sys.argv) > i + 1:
+                remote_url = sys.argv[i + 1]
+            elif arg == "--remote-subpath" and len(sys.argv) > i + 1:
+                remote_subpath = sys.argv[i + 1]
+
         if not skill_name or not source:
             print("❌ 错误: 请提供 skill_name 和 source")
             sys.exit(1)
-        
-        info = record_install(skill_name, source, path)
+
+        info = record_install(skill_name, source, path,
+                              install_type=install_type,
+                              install_commit=install_commit,
+                              install_branch=install_branch,
+                              remote_url=remote_url,
+                              remote_subpath=remote_subpath)
         print(format_install_record(info))
     
+    elif command == "auto-check":
+        threshold = DEFAULT_STALE_THRESHOLD_DAYS
+        for i, arg in enumerate(sys.argv):
+            if arg == "--threshold" and len(sys.argv) > i + 1:
+                threshold = int(sys.argv[i + 1])
+        results = check_stale_remote_skills(threshold_days=threshold)
+        report = format_recommendation_report(results)
+        if report:
+            print(report)
+
     elif command == "check":
         # record.py check <skill_name>
         skill_name = sys.argv[2] if len(sys.argv) > 2 else None
@@ -599,7 +835,14 @@ def main():
                 print(f"\n📦 {name}")
                 print(f"   版本: {info.get('current_version', '未知')}")
                 print(f"   来源: {info.get('source', '未知')}")
+                print(f"   类型: {info.get('install_type', '未知')}")
                 print(f"   安装时间: {info.get('installed_at', '未知')}")
+                if info.get("install_commit"):
+                    print(f"   安装 Commit: {info['install_commit']}")
+                if info.get("install_branch"):
+                    print(f"   安装 Branch: {info['install_branch']}")
+                if info.get("last_check_at"):
+                    print(f"   上次检查: {info['last_check_at']}")
                 if info.get("description"):
                     print(f"   描述: {info['description']}")
     
