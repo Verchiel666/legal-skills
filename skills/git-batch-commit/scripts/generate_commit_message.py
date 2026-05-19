@@ -780,7 +780,7 @@ def main():
     parser.add_argument(
         '--local-ref',
         type=str,
-        help='关联的本地任务引用，例如 "docs/ISSUES.md Issue #13"，不会关闭 GitHub Issue'
+        help='关联的本地任务引用，例如 "project-task Issue #13"，不会关闭 GitHub Issue'
     )
 
     args = parser.parse_args()

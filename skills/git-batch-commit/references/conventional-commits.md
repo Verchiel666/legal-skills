@@ -56,12 +56,12 @@ Refs #13
 - 添加使用示例
 ```
 
-本地任务引用使用正文中的 `Refs:`，避免误关 GitHub Issue：
+项目本地任务引用使用正文中的 `Refs:`，避免误关 GitHub Issue：
 
 ```text
 docs: 更新任务材料
 
-Refs: docs/ISSUES.md Issue #13
+Refs: project-task Issue #13
 
 - 补充素材包说明
 ```

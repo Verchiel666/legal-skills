@@ -23,7 +23,7 @@ description: '智能 Git 批量提交快捷按钮。触发词："git 提交"、"
 | 判断是否能 merge / push / close PR | `git-workflow` | 本 Skill 不做合并门禁 |
 | PR 合入 main 的 commit 标题是否带 `(#N)` | `git-workflow` | 本 Skill 只在生成普通 commit 时保留 Issue/Task 引用 |
 | 直接解决 GitHub Issue 是否应写 `Closes #N` | `git-workflow` | 本 Skill 只写 `Refs #N`，不关闭 Issue |
-| 本地 `docs/ISSUES.md` / `docs/TASKS.md` 任务引用 | `cross-agent-collab` 定任务来源，`git-batch-commit` 写引用 | 使用 `--local-ref "docs/ISSUES.md Issue #13"` |
+| 项目本地任务引用 | `cross-agent-collab` 定任务来源，`git-batch-commit` 写引用 | 使用 `--local-ref "project-task Issue #13"` |
 
 当用户只是说“把这些改动提交一下 / 拆分提交”，使用本 Skill；当用户说“合并 PR / 拉 PR 到 main / 推送 / 关闭 issue”，同时遵循 `git-workflow`。
 
@@ -54,15 +54,15 @@ python3 skills/git-batch-commit/scripts/interactive_commit.py --dry-run
 # 这组提交关联 GitHub Issue #13：每个标题追加 (#13)，正文写 Refs #13
 python3 skills/git-batch-commit/scripts/interactive_commit.py --issue 13
 
-# 这组提交关联本地 docs/ISSUES.md 任务，不误关 GitHub Issue
-python3 skills/git-batch-commit/scripts/interactive_commit.py --local-ref "docs/ISSUES.md Issue #13"
+# 这组提交关联项目本地任务，不误关 GitHub Issue
+python3 skills/git-batch-commit/scripts/interactive_commit.py --local-ref "project-task Issue #13"
 ```
 
 **命令行参数**：
 - `--yes`, `-y`：跳过交互式确认，自动创建提交
 - `--dry-run`：仅显示分组建议，不实际创建提交
 - `--issue N`：关联 GitHub Issue，提交标题追加 `(#N)`，正文写 `Refs #N`
-- `--local-ref "..."`：关联项目本地任务，如 `docs/ISSUES.md Issue #13`，只写 `Refs: ...`，不会关闭 GitHub Issue
+- `--local-ref "..."`：关联项目本地任务，如 `project-task Issue #13`，只写 `Refs: ...`，不会关闭 GitHub Issue
 
 ### 方式二：手动分类
 
@@ -115,7 +115,7 @@ python3 skills/git-batch-commit/scripts/categorize_changes.py --json
 **Issue / Task 引用规则**：
 - 若一组批量提交关联 GitHub Issue，使用 `--issue N`。每个提交标题会包含 `(#N)`，正文写 `Refs #N`。
 - 本 Skill 不生成 `Closes #N`。是否关闭 GitHub Issue 属于 `git-workflow` 的判断范围。
-- 若编号来自本地文档而非 GitHub Issue，使用 `--local-ref "docs/ISSUES.md Issue #N"` 或 `--local-ref "docs/TASKS.md Issue #N"`，不要写 `Closes #N`。
+- 若编号来自项目本地任务源而非 GitHub Issue，使用 `--local-ref "project-task Issue #N"` 或项目约定的等价引用，不要写 `Closes #N`。
 - PR 合并提交的 `(#PR编号)` 规则不由本 Skill 决定，遵循 `git-workflow`。
 
 ## 工作流程
