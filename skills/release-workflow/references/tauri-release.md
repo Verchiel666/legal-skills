@@ -54,6 +54,7 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 仅自动更新需要：签名密钥
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
@@ -61,9 +62,11 @@ jobs:
           releaseName: 'App ${{ github.ref_name }}'
           releaseDraft: true
           prerelease: false
+          # 不用自动更新时设为 false，用自动更新时设为 true
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+  # 仅自动更新需要此 job：生成 latest.json 并发布
   publish:
     needs: build
     runs-on: ubuntu-latest
@@ -100,12 +103,31 @@ jobs:
 
 ## 构建产物
 
-| 平台 | 安装包 | Updater 产物 | 签名 |
-|------|--------|-------------|------|
+### 仅安装包（不需要自动更新）
+
+Pake 等项目只发布安装包，不包含更新器产物。适用于用户手动下载更新的场景。
+
+| 平台 | 安装包 |
+|------|--------|
+| macOS ARM | `App_X.Y.Z_aarch64.dmg` |
+| macOS Intel | `App_X.Y.Z_x64.dmg` |
+| Windows | `App_X.Y.Z_x64-setup.exe` |
+
+### 带自动更新
+
+lencx/ChatGPT 等项目在安装包之外，还包含更新器所需的产物。更新器通过 `latest.json` 检查版本、下载对应平台 bundle、用 `.sig` 验证完整性。
+
+| 平台 | 安装包 | 更新器产物 | 签名 |
+|------|--------|-----------|------|
 | macOS ARM | `App_X.Y.Z_aarch64.dmg` | `App_aarch64.app.tar.gz` | `.sig` |
 | macOS Intel | `App_X.Y.Z_x64.dmg` | `App_x64.app.tar.gz` | `.sig` |
 | Windows | `App_X.Y.Z_x64-setup.exe` | — | `.exe.sig` |
-| Windows | `App_X.Y.Z_x64_en-US.msi` | — | `.msi.sig` |
+
+Windows 只需 `.exe`（NSIS），不需要额外发布 `.msi`。签名文件 `.sig` 和 `latest.json` 一起放在 release assets 中，更新端点直接用 GitHub 直链：
+
+```
+https://github.com/<owner>/<repo>/releases/latest/download/latest.json
+```
 
 ## latest.json 格式
 

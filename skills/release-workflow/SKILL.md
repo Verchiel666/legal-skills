@@ -12,6 +12,10 @@ license: MIT License - 详见 LICENSE.txt
 
 GitHub 项目的完整发布周期：从版本号确定到 CI 构建验证。CI 故障排查（`references/ci-troubleshooting.md`）和特定项目类型指南（`references/` 下各文档）作为发布流程的补充参考。
 
+## 项目配置
+
+`config/projects.yaml` 集中管理各项目的发布配置（仓库、平台、自动更新、排除产物等）。发布时先读取对应项目配置，按配置决定构建矩阵和预期产物。模板见 `config/projects.example.yaml`。
+
 ## 发布前检查
 
 | 检查项 | 说明 |
@@ -120,7 +124,10 @@ EOF
 gh release view vX.Y.Z --json assets --jq '.assets[].name'
 ```
 
-根据项目类型检查预期产物是否齐全。
+对照 `config/projects.yaml` 中该项目的配置检查：
+1. 预期产物是否齐全（根据 `platforms` 和 `auto_update` 推导）
+2. `exclude_assets` 中列出的产物是否意外出现
+3. 产物命名是否符合规范
 
 ### 第 7 步：清理
 
