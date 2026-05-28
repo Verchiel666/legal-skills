@@ -49,6 +49,7 @@
 
 | 日期       | 类型     | Skill                                             | 版本   | 更新要点                                                                                           |
 | :--------- | :------- | :------------------------------------------------ | :----- | :------------------------------------------------------------------------------------------------- |
+| 2026-05-28 | 更新     | [code2patent](skills/code2patent/)               | v1.5.3 | 补强架构转译规则：理解代码架构后转为对象、关系、状态、动作、时序和输出，不写模块/技术选型清单 |
 | 2026-05-20 | 更新     | [skill-lint](skills/skill-lint/)                 | v1.4.0 | 更新 Frontmatter 校验规则：`version` 调整为推荐发布字段，并检查 CHANGELOG、README、marketplace 版本同步 |
 | 2026-05-20 | 更新     | [skill-architect](skills/skill-architect/)       | v1.4.0 | 创建与审查流程同步新版 Frontmatter 发布规范，默认纳入 version、author、homepage 推荐字段 |
 | 2026-05-20 | 更新     | [legal-ocr](skills/legal-ocr/)                   | v1.3.1 | 精简 description，仅保留 OCR、扫描识别、文档识别等功能触发条件和必要边界 |
@@ -56,8 +57,6 @@
 | 2026-05-20 | 新上传   | [video-screenshot](skills/video-screenshot/)                 | v0.3.1 | 从录屏视频中自动抽取关键帧、去重并保存为图片，可用作法律证据 |
 | 2026-05-18 | 更新     | [legal-proposal-generator](skills/legal-proposal-generator/) | v0.3.0 | 重构文档类型判断逻辑，解决"建议书"与"方案"误匹配，新增案件性质优先级和禁止降级规则 |
 | 2026-05-18 | 更新     | [skill-manager](skills/skill-manager/)               | v1.5.0 | 新增远程 Skill 更新检测（版本对比 + Commit 对比）、安装元数据追踪（commit/branch/subpath）、更新摘要自动生成 |
-| 2026-05-17 | 更新     | [opc-legal-counsel](skills/opc-legal-counsel/)       | v0.2.6 | 新增法源与政策来源登记表，明确专项技能触发边界，修复评测版本一致性检查并补入 marketplace 索引       |
-| 2026-05-17 | 更新     | [git-workflow](skills/git-workflow/)                 | v1.1.0 | 补齐 PR 正文最低要求和 Monorepo diff 检查清单，强化合并前 fail-closed 门禁                         |
 
 </details>
 
@@ -312,9 +311,9 @@
 <tr>
 <td><a href="skills/code2patent/"><strong>code2patent</strong></a></td>
 <td>专业·知产</td>
-<td style="word-break:break-word">从已开发代码项目中提取技术实现证据，围绕候选专利方案生成技术交底书，并以"权利要求布局卡 → 发明专利初稿"两步法生成接近可申报版的中国发明专利起草材料；内置《专利审查指南》撰写规则、计算机程序发明保护主题提示和 agent 速查卡</td>
+<td style="word-break:break-word">从已开发代码项目中提取技术实现证据，围绕候选专利方案生成算法/软件类说明书式技术交底书，并以"权利要求布局卡 → 发明专利初稿"两步法生成接近可申报版的中国发明专利起草材料；内置《专利审查指南》撰写规则、计算机程序发明保护主题提示和 agent 速查卡</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.4.2</td>
+<td style="text-align:center">v1.5.3</td>
 <td><a href="https://github.com/cat-xierluo/code2patent.skill">独立仓库</a></td>
 </tr>
 <tr>
