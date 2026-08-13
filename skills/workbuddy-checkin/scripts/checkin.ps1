@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # WorkBuddy 每日积分签到（Windows PowerShell 版，兼容 PS 5.1）
 #
 # 流程：读取本地令牌 -> 查询签到状态 -> 未签到则领取 -> 写日志
@@ -113,6 +113,11 @@ if ($Token.StartsWith("ERR")) {
 }
 
 $Api = "https://copilot.tencent.com"
+
+# 【本地 Windows 适配】PowerShell 5.1 捕获外部命令 stdout 时按系统 ANSI 代码页（GBK）解码。
+# curl.exe 返回 UTF-8 JSON（含中文 msg），错位解码会吞掉 JSON 闭合引号，导致 ConvertFrom-Json
+# 抛异常（误报 PARSE_ERR，且"已签到"状态无法识别）。先声明 UTF-8 再调用 curl.exe。
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 # 复刻 WorkBuddy 桌面端真实签名（逆向自 app.asar 的 buildHeaders）：
 # 官方接口路径需 /v2/ 前缀，且必须带 X-User-Id（企业账号另带 X-Enterprise-Id / X-Tenant-Id）。
