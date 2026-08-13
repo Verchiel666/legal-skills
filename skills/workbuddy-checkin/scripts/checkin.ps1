@@ -149,14 +149,16 @@ function Invoke-CheckinApi([string]$Path) {
 # 约 0.57%/次 会因 UUID 里恰好出现 "401" 被误判为令牌过期 —— 脚本在调 daily-checkin
 # 之前就退出，导致当日积分未领取、连续签到中断（第 7 天 1000 积分奖励作废）。
 $Status = ""; $HttpCode = "000"
-try { $r = Invoke-CheckinApi "/v2/billing/meter/checkin-status"; $HttpCode = $r[0]; $Status = $r[1] } catch { $HttpCode = "000"; $Status = "" }
+try { $r = Invoke-CheckinApi "/v2/billing/meter/checkin-activity-status"; $HttpCode = $r[0]; $Status = $r[1] } catch { $HttpCode = "000"; $Status = "" }
 if ($HttpCode -eq "000") { Write-Log "查询签到状态失败（网络异常）"; exit 1 }
 if ($HttpCode -eq "401" -or $HttpCode -eq "403") { Write-Log "令牌已过期或无权限（HTTP $HttpCode），请打开 WorkBuddy 桌面端刷新登录态后重试"; exit 1 }
 if ($HttpCode -ne "200") { Write-Log "查询签到状态失败（HTTP $HttpCode）"; exit 1 }
 if (-not $Status) { Write-Log "查询签到状态失败（响应为空，HTTP $HttpCode）"; exit 1 }
 
-# 注意：today_checked_in 字段在 v5.3.8 实测不可靠（签到成功后仍可能为 false）。
-# 此处仅用于快速短路与 401 探测；真正的幂等兜底在下方 daily-checkin 的 code=10001 处理。
+# 状态接口为 checkin-activity-status（Windows 2026-08-13 实测）：
+# 旧接口 /checkin-status 始终返回 data 全零（active:false），无参考价值；
+# checkin-activity-status 的 today_checked_in 可靠，命中即短路。
+# 若响应无该字段或解析异常，保守起见继续走 daily-checkin（code=10001 兜底幂等）。
 $Checked = $false
 try { $Checked = [bool]($Status | ConvertFrom-Json).data.today_checked_in } catch {}
 if ($Checked) { Write-Log "今日已签到，无需重复领取"; exit 0 }
