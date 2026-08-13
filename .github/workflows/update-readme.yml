@@ -11,7 +11,7 @@ jobs:
   update-readme:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -26,7 +26,7 @@ jobs:
 
           owner, repo = os.environ["GH_REPO"].split("/")
           api = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-          req = urllib.request.Request(api, headers={"Authorization": f"token {os.environ['GH_TOKEN']}"})
+          req = urllib.request.Request(api, headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}"})
           data = json.loads(urllib.request.urlopen(req).read())
 
           # 真实 URL 映射:<skill>-<semver>.zip → browser_download_url
