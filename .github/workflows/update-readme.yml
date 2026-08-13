@@ -20,29 +20,29 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # 用 gh CLI 读取 release 资产（认证自动处理，无需手写 API 调用）
+          gh api "repos/${GH_REPO}/releases/latest" --jq \
+            '[.assets[] | select(.name | endswith(".zip")) | {name, url: .browser_download_url}]' \
+            > /tmp/assets.json
           python3 << 'EOF'
-          import os, re, json, urllib.request
+          import json, re
           from pathlib import Path
 
-          owner, repo = os.environ["GH_REPO"].split("/")
-          api = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-          req = urllib.request.Request(api, headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}"})
-          data = json.loads(urllib.request.urlopen(req).read())
+          owner_repo = __import__("os").environ["GH_REPO"]
+          assets = json.loads(Path("/tmp/assets.json").read_text())
 
           # 真实 URL 映射:<skill>-<semver>.zip → browser_download_url
           url_map = {}
-          for a in data["assets"]:
-              if not a["name"].endswith(".zip"):
-                  continue
+          for a in assets:
               base = a["name"][:-4]
               skill = base.rsplit("-", 1)[0]
-              url_map[skill] = a["browser_download_url"]
+              url_map[skill] = a["url"]
           print(f"latest release assets: {len(url_map)}")
 
           readme = Path("README.md").read_text()
           # 匹配 README 里的占位 URL:releases/latest/download/<skill>.zip
           pattern = re.compile(
-              r'https://github\.com/' + re.escape(f"{owner}/{repo}") +
+              r'https://github\.com/' + re.escape(owner_repo) +
               r'/releases/latest/download/([a-z0-9.-]+)\.zip')
 
           replaced = 0
