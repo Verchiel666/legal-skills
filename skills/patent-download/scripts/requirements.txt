@@ -1,8 +1,8 @@
 # Google Patents SDK（推荐通道，免费免登录）
-patent-downloader
+patent-downloader>=0.4.0
 
 # 浏览器自动化（度衍/粤港澳等通道）
-playwright
+playwright>=1.62.0
 
 # HTTP请求（PatentStar等API通道）
-requests
+requests>=2.32.0  # >=2.32.0 修复 CVE-2024-35195

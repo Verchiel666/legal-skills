@@ -1,4 +1,4 @@
-requests>=2.28.0
-oss2>=2.18.0
+requests>=2.32.0  # >=2.32.0 修复 CVE-2024-35195
+oss2>=2.19.1
 # yt-dlp 用于"给链接自动下载"(小宇宙/YouTube/B站等);也可用 brew install yt-dlp
-yt-dlp>=2024.0.0
+yt-dlp>=2026.7.4  # yt-dlp 按 CalVer 发布，需持续跟随，否则站点解析失效

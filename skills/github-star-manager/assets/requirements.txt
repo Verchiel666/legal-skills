@@ -1,12 +1,15 @@
 # GitHub Star 追踪器依赖
 
 # HTTP 请求
-requests>=2.31.0
+requests>=2.32.0  # >=2.32.0 修复 CVE-2024-35195
 
 # 配置文件加载
 python-dotenv>=1.0.0
 
 # OpenAI API (可选，用于 AI 摘要)
+# SDK v3(2026-08) 将默认 HTTP 客户端换为 HTTPX2，本技能仅用
+# OpenAI() + chat.completions.create（官方确认 Chat Completions 未弃用），
+# 无需迁移即可运行 v3。AI 初始化失败时自动降级为基础摘要。
 openai>=1.0.0
 
 # 如果需要更好的 JSON 处理

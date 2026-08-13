@@ -1,2 +1,2 @@
-requests>=2.31.0
-pillow>=10.0.0
+requests>=2.32.0  # >=2.32.0 修复 CVE-2024-35195
+pillow>=11.0.0
