@@ -1,5 +1,58 @@
 # Changelog
 
+## [2.5.3] - 2026-08-14
+
+### 改进
+
+- `references/05-legal-domain-patterns.md` §2.1 新增「诉讼 worker 的证据访问约定」（Task-049）：澄清代码 `node_modules`「隐式解析 → 必须软链」与诉讼证据「显式访问 → 绝对路径直读」的机制差异；规定 PM spawn 诉讼 worker 时 prompt 必须包含「主仓项目根 + 案件相对路径 + 产出写路径 + md 引证用相对名」四要素，并明确反模式（不软链证据目录、不硬编码绝对路径、不让 worker 假设完整路径）。文档示例全部用 `<占位符>` 表达，不绑定具体运行机器/案件，保证 Skill 跨用户可复用。
+
+## [2.5.2] - 2026-08-14
+
+### 改进
+
+- SKILL.md §3.3 新增「PM spawn 操作纪律」（Task-041~044，Wave-2 实战撞坑固化）：spawn 后不重复 send 完整 prompt（与 `worker-start` live preamble 重复，Task-042）；`run-create` 只调一次避免 `consumer_fenced`（Task-043）；supervised worker 不用 `pm-monitor`/`sentinel` 判完成（靠 `worker_done → Delivery`，Task-041）；spawn 前后独立 Bash 调用并行（Task-044）。
+
+## [2.5.1] - 2026-08-14
+
+### 修复
+
+- Orca supervised worker 无法自验（Task-045/046，G31）：worktree 落在 `~/orca/workspaces/`（独立路径树，不在主仓父链）→ `npm run` 向上解析找不到主仓 `node_modules` → `tsc/vitest/eslint: command not found`；`VERIFY_COMMANDS` 默认空 → `allowed_shell` 仅 3 条 → worker 跑不了验证门/推不了 PR。tmux worktree 靠在主仓子树（`.claude/worktrees/`）的路径巧合白嫖向上解析（G28），Orca 路径打破后塌方。
+
+### 新增
+
+- `scripts/spawn-worker-deps.sh`（独立 source 文件，不加剧 spawn-worker.sh 膨胀）：`ensure_worktree_deps` 项目类型感知依赖补偿（Node 软链 `node_modules` / Rust cargo 共享 / Python venv 路径敏感标 blocked）；`inject_default_verify_commands` 按 `package.json` scripts 注入默认 `npm run typecheck/lint/test/build` 到白名单（PM 显式 `--verify-cmd` 优先不覆盖）。
+- `spawn-worker.sh` source deps + 两处调用（worktree 创建后 `ensure_worktree_deps`、`write_install_authorization` 前 `inject_default_verify_commands`）。
+- `clean-worktree.sh` 删 worktree 前安全 unlink `node_modules` 软链（`[ -L ] && rm -f` 无尾斜杠，绝不跟随删主仓）。
+
+### 改进
+
+- `SKILL.md` §3.2 + `worker-prompt.md` + G31 lesson（`references/09`）说明依赖补偿 + 默认 verify 机制；G31 含「统一 Orca worktree 路径到主仓」的 A-否决查证（Orca `worktree create` 无 `--path`，软链是唯一实际补偿）。
+
+## [2.5.0] - 2026-08-13
+
+### 修复
+
+- Harness 权限改为对完整可证明祖先链取白名单交集；弱宿主嵌套 Codex/Claude Code 仍只能保留弱权限，链路读取不完整时失败关闭。
+- 新增 worker backend/启动命令身份绑定，拒绝标签伪装、命令链、不透明 wrapper 与任意命令替换；安装守卫的 prompt-only 降级不再能绕过 backend 身份门禁。
+- Harness 的 Orca 证据统一使用版本匹配的 `orca-runtime.sh`，避免权限检测与 worker 控制选择不同 CLI。
+
+### 新增
+
+- 新增跨 worktree 的 provider 原子并发租约：按个人配置在副作用前占槽，启动后绑定精确 tmux session 或 Orca terminal，并在真实资源结算后释放。
+- 租约存放于 Git common dir 的可信根，使用文件锁与原子写入；释放同时校验可信路径、session、资源句柄和运行时存活状态，未知状态失败关闭。
+- 新增 `test-worker-command-policy.sh` 与 `test-provider-lease.sh`，覆盖四后端 renderer、wrapper、伪装命令、额度竞争、陈旧租约、越界路径和存活资源提前释放。
+
+### 改进
+
+- Orca worktree 创建显式继承项目 setup 策略；继续采用门禁优先的两阶段启动，不直接切换会在权限文件落盘前启动 Agent 的 `worktree create --agent`。
+- 当前运行合同明确收口为 Claude Code、Codex、CodeBuddy、QoderWork CN 四个 backend；OpenCode/custom 等旧内容只保留为历史调研或独立诊断，不构成派发授权。
+- 同步 `SKILL.md`、Orca reference、个人配置模板和根 README 的 v2.5.0 说明，传统 tmux 路径保持可用。
+
+### 验证
+
+- Harness 层级门禁 26/26、命令身份门禁 15/15、provider lease 原子与生命周期回归全部通过。
+- 在 Orca 1.4.180 中使用本地无模型调用的假 Codex 完成真实 worktree/terminal/metadata/lease/close/clean 闭环；终端关闭后为 `connected=false`、`writable=false`，未消耗模型额度。
+
 ## [2.4.0] - 2026-08-13
 
 ### 新增 — Harness 调用层级门禁
