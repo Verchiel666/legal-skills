@@ -34,17 +34,14 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-30 | 更新   | [multi-agent-orchestration](skills/multi-agent-orchestration/)         | v2.10.1 | **Orca 高频主路径与 PR-first 收口**：worktree/terminal 默认由 Orca Orchestration 管理，纯 tmux 降为兼容回退；收口先创建或接管唯一 PR，再按 branch protection 分流为本地集成或 GitHub merge。Task-097 已升级 READY，机械去重/三态收口尚未实现，不扩大能力声明 |
+| 2026-09-04 | 更新   | [multi-agent-orchestration](skills/multi-agent-orchestration/)         | v2.15.0 | **PR-first 唯一审计与事务式本地集成**：create 前机械区分 exact/suspected/unrelated PR，唯一 worker 自建 PR 可接管；本地候选以三方 patch 保留 fresh main 并从隔离 clone 安全推送，保护/漂移/授权未知时停在非成功 `VALIDATE_ONLY`。 |
+| 2026-08-30 | 更新   | [elements-complaint-generator](skills/elements-complaint-generator/)   | v0.15.0 | **最终版式门禁与失败安全**：新增独立 DOCX/PDF 检查器，统一表格居中、固定列宽、跨页行和连续页码，保留横竖版边界；候选件经 LibreOffice 真实渲染通过后才发布。113 棵模板静态门禁与 21 类文书真实 PDF 抽样通过，68 棵主文书逐树长文本压力矩阵继续列为 P0。 |
+| 2026-08-30 | 更新   | [video-screenshot](skills/video-screenshot/)                           | v0.8.2 | **事务性输出与失败安全**：参数和视频先预检，新结果在同级 staging 完整生成后才替换旧结果；新增所有权标记、旧版报告兼容校验、符号链接/未知文件/下游产物保护，以及损坏视频和提交回滚真实 CLI 回归 |
+| 2026-08-30 | 更新   | [legal-industry-report](skills/legal-industry-report/)               | v1.1.0 | **法律专业正式行业报告（月度/季度）**：增加 `legal-` 领域前缀，统一法律研报产品命名；继续面向公开展示与广泛分发，保留行业全景、规则包、证据账本和机构出版物式 PDF。 |
+| 2026-08-30 | 更新   | [legal-client-brief](skills/legal-client-brief/)                     | v1.1.0 | **法律专业客户日常简报（每日/每周/事件）**：增加 `legal-` 领域前缀，继续服务既有客户日常触达；保留完整简报、朋友圈和公众号三件套及 DRAFT 人工发布门禁。 |
 | 2026-08-26 | 更新   | [course-generator](skills/course-generator/)                           | v2.9.4 | **弱模型前向实测与账本 fail-fast**：GLM 三门真实课程首轮均通过 14/14 领域门禁、主模型语义评分 90—93；第二轮配额失败严格记为 0/3，并据完整失败样本新增生成前素材账本预检，统一 include/skip 的连续 `MAT-*` 编号、阻断 `SKIP-*` 平行命名；同步保留个人判断、事故转述和产品效果的认识论边界，稳定性继续标记 `NOT_VERIFIED` |
 | 2026-08-26 | 更新   | [md2word](skills/md2word/)                                             | v1.3.5  | **全书本地图片路径修复**：`--book` 在合并前按各章 Markdown 自己的目录重定位 Markdown/HTML 本地相对图片，含空格、URL 编码和可选标题的路径均可嵌入；单章与远程图片行为不变 |
-| 2026-08-25 | 新增   | [industry-research-report](skills/industry-research-report/)           | v0.7.0 | **行业法律调研报告（获客端）**：**v0.7.0 全面精简版式（Less is more：页眉只留报告编号、页脚只留页码，砍掉横线/kicker/多列冗余装饰）**；输入 industry/region/focus/depth，输出精排 A4 PDF 行业法律调研报告；蓝皮书体例（深蓝 #1B3C59 + 金色 #D4AF37 + 白色页面）+ 4 个封面变体（顶金带+底金边+REPORT NO. 徽章工艺感）+ 5 个律师常见调色板；**v0.6.2 书籍连续流改造**（DEC-IR-019）：放弃杂志固定画布裁切，改 @page margin box 跨页 header/footer + 章节自然流动不截断 + 大边距（天头80px/地脚60px/左右56px≈21/16/15mm）；**v0.6.1 杂志Studio book-style 排版优化**（加大字号 IR 22/12pt + 行高 2.0）；**v0.6.0 三连环视觉修复**（封面 CSS 注入 / px 单位 / 按 H2 拆章）；**v0.5.0 report_kind 字段 + 正文设计系统差异化路由**（IR 蓝皮书感 vs WB 通讯感，12 维度全表）；内置 report-profile.md 个性化配置 + 首启向导；行业特定信源映射内置 20 个高频行业；数据源走企查查 MCP + 网络检索 5 级信源优先级；md 基底 → jinja2 → Playwright + Chrome headless，一键出精排 A4 PDF |
-| 2026-08-25 | 新增   | [weekly-legal-briefing](skills/weekly-legal-briefing/)                 | v0.6.0 | **定时法律研报（留存端）**：**v0.6.0 继承 v0.7.0 精简版式（页眉页脚只留编号/页码）**；配置一次，定期自动生成行业/法律研报草稿（如"科技型制造企业 周报"）；**v0.5.2 书籍连续流继承**（Skill 1 v0.6.2：@page margin box 跨页 header/footer + 章节自然流动不裁切 + 大边距）；**v0.5.0 三连环视觉修复同步**；**v0.4.0 新增 2 个专属轻量封面 (W1-minimal / W2-tag-bar) + 正文设计系统强烈差异化**（字号小 + 灰色细线 + 单栏目录，与 IR 蓝皮书感拉开）；白名单信源制（白名单外默认丢弃）+ 案例必带案号 + 案号裁判文书网回查；输出文件一律带 `_DRAFT` 标记，**永不自动外发**（硬约束，发布动作物理上留给人工）；渲染管线 symlink 复用 industry-research-report，避免双份维护；附 WorkBuddy / OpenClaw cron / GitHub Actions 三平台部署说明 |
 | 2026-08-25 | 更新   | [md2word](skills/md2word/)                                             | v1.2.6  | **Word 出版逃逸修复**：多列长表头受正文区硬预算约束，`tblW`、grid 与单元格宽度统一；普通及显式居中表题取消缩进且保留文字样式；引用块 `[^label]` 正确生成原生 Word 脚注，不再显示字面 marker |
-| 2026-08-25 | 更新   | [course-generator](skills/course-generator/)                           | v2.9.0 | **长转录稿细粒度守恒**：新增确定性 `source-index.json`，每个内容块必须 include 或受控 skip；素材在大纲阶段预承诺具体覆盖词，生成后以真实正文摘录兑现，防止弱模型用完整提纲遮蔽精华漏失；26 类故障注入 + 5 类索引回归通过，并用 18.7 万字节、135 张图的真实课程完成双轮前向测试 |
-| 2026-08-24 | 更新   | [course-generator](skills/course-generator/)                           | v2.8.1 | **课程产物契约化**：新增 `course-manifest.json`，以稳定 SRC/MAT/IMG 关系绑定来源、素材、章节和图片；标准库验证器精确检查文件、素材映射与图片集合/目标/顺序，13 类正反例覆盖旧版漏报；长材料改用索引化两遍流程，生成不再自动归档，并收窄与转录纠错、讲课复盘、成书 Skill 的触发边界 |
-| 2026-08-24 | 更新   | [lecture-review](skills/lecture-review/)                               | v1.2.1 | **讲课复盘三轮迭代**：v1.1.0 新增 deck 课件对照（六段 → 七段：实讲/半讲/跳过/挪位回收/主动宣判五枚举 + min/页双口径）；v1.2.0 高级模式课程结构复盘（评人/评课分离 + 双向比对三方向）；v1.2.1 产物落点约定（七段报告/review.md/stats.json/profile 落点表 + 评课不进讲师档案）；脚本 `analyze_stats.py` 新增 `--deck` 课件解析与 `self_check` 三个候选生成器（module_distribution / near_dup_pages / title_term_index），references/metrics.md 同步补「课件对照」节；`references/structural-review-template.md` 沉淀九节+附录的高级模式复盘骨架 |
-| 2026-08-24 | 新增   | [lecture-review v1.0.0](skills/lecture-review/)                        | v1.0.0 | **讲课表现复盘**：通读 raw 转录稿动态发现主讲口癖/节奏/句式与结构信号（时间分配/承诺回收/互动密度），预设词表仅作对比锚点；脚本统一口径出数字（讲师隔离+归属污染核验、最长优先去重叠、双格式时间戳、剔幻灯片 URL）；讲师档案跨场次闭环（watchlist 下场复查）；ASR 吞语气音盲区显式声明；经双盲基线测试（RED→GREEN）验证 |
-| 2026-08-22 | 新增   | [elements-complaint-generator](skills/elements-complaint-generator/)   | v0.13.4 | **要素式起诉状生成器**：基于最高法法〔2025〕82 号 67 类官方模板，从律师已写好的常规起诉状自动生成要素式 Word 文书。113 棵 OOXML 模板树全量入库（git 可 diff），68/68 案由精调（含知产行政/执行全家族/海事/环资/行政/国赔），通用勾选机制+多当事人扩容+法人块渲染+批量模式，格式像素级保真（lxml 跨 run 精确替换），e2e 28 产物+68 树冒烟+45 答辩冒烟全绿 |
 </details>
 
 ## 📋 项目概述
@@ -269,6 +266,24 @@
 <td></td>
 </tr>
 <tr>
+<td><a href="skills/legal-client-brief/"><strong>legal-client-brief</strong></a></td>
+<td>专业·行业追踪</td>
+<td style="word-break:break-word">面向既有客户的每日、每周或事件增量追踪：在白名单内生成完整简报、朋友圈和公众号三件套，校验窗口、案例、跨渠道事实与 A4 PDF</td>
+<td style="text-align:center">CC-BY-NC</td>
+<td style="text-align:center">v1.1.0</td>
+<td style="text-align:center">待发布</td>
+<td>不自动改名或外发</td>
+</tr>
+<tr>
+<td><a href="skills/legal-industry-report/"><strong>legal-industry-report</strong></a></td>
+<td>专业·行业研究</td>
+<td style="word-break:break-word">面向公开展示与广泛分发的月度/季度行业报告：通过行业规则包组织市场、产业链、政策监管、企业、法律风险与服务机会，并生成可追溯的正式报告包</td>
+<td style="text-align:center">CC-BY-NC</td>
+<td style="text-align:center">v1.1.0</td>
+<td style="text-align:center">待发布</td>
+<td>律师复核前为 PUBLIC_REVIEW</td>
+</tr>
+<tr>
 <td><a href="skills/legal-text-format/"><strong>legal-text-format</strong></a></td>
 <td>通用·文书</td>
 <td style="word-break:break-word">将法律文本（法律条文或法律案例）转换为规范的 Markdown 格式，采用 archive 归档结构存储。推荐与 <a href="skills/wechat-article-fetch/"><strong>wechat-article-fetch</strong></a> 配合使用实现完整工作流</td>
@@ -410,7 +425,7 @@
 <td>工具·视频处理</td>
 <td style="word-break:break-word">从录屏视频中以有界高召回抽取证据截图并过滤切换中间态；可用本地 OCR 多锚点与无文字图像主体生成不保存原文的证据线索包，再为普通或较弱多模态模型提供封闭分类/概括及只做减法的去重审计</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v0.8.1</td>
+<td style="text-align:center">v0.8.2</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.08.06/video-screenshot-0.3.2.zip">下载</a></td>
 <td></td>
 </tr>
@@ -630,7 +645,7 @@
 <td>工具·Agent协作</td>
 <td style="word-break:break-word">Orca-first 多 Agent 本地编排，支持 Wave receipt、worktree/terminal UI、Run/Task/Dispatch、worker transcript、严格 lifecycle 结算、五后端总控、Harness 层级门禁、Wave Autopilot live-session 快路径与 L2 跨会话持久 controller core</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v2.10.1</td>
+<td style="text-align:center">v2.15.0</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.08.06/multi-agent-orchestration-1.20.5.zip">下载 v1.20.5</a></td>
 <td></td>
 </tr>

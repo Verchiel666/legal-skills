@@ -1,5 +1,51 @@
 # Changelog
 
+## [2.15.0] - 2026-09-04
+
+### 新增
+
+- **PR 唯一性审计 `pr-audit.v1`**：新增 `scripts/pr-audit.py` 与 `pm-orchestrate.sh pr-audit`。按 canonical repo/Git common dir、base/head ref 与 OID、head repository、真实 diff 指纹相等以及独立 `Task:`/`Agent:` trailer，把 open PR 分为 exact、suspected、unrelated；同 head 错 SHA、元数据相同但 diff 不同、同内容异分支、fork、事实未知和候选截断均失败关闭，stdout 保持单 JSON。
+- **PR-first 三态收口**：`pm-closeout.sh` 新增 `local-after-pr`（默认）、`remote-pr`、`validate-only`，以及两阶段显式授权：第一阶段绑定 repo/PR/head/SHA/operation，main mutation 前第二阶段再绑定最终 base/candidate/tree。只读预审发生在任何 push/create 之前，唯一 worker 自建 PR 可直接接管，zero 才允许授权式 push/create；调用方 body 中保留 `Task:`/`Agent:` trailer 会在 mutation 前被拒。
+
+### 修复
+
+- **本地 main 事务边界**：候选改为在 fresh main 隔离 clone 中对冻结 worker patch 做三方应用，不再整文件覆盖 main；从隔离 main 候选 safe-push，远端确认后才快进真实 clean main。scope 冲突、safe-push 失败、错误/dirty/进行中 Git 操作的 main worktree 均保持 main 不变。
+- **保护规则与漂移失败关闭**：改读 GitHub branch metadata 的类型化 `.protected` 布尔值，同时覆盖 classic branch protection 与 rulesets；只有明确 `false` 才允许本地 main push，并在最终 push 前再次确认，403/404/畸形/中途翻转都降为非成功 `VALIDATE_ONLY`。最终 main push/GitHub merge 前重跑唯一 PR 审计并复核 base/head/diff/checks/review；远端 mutation 前另拒绝原生 merge queue（留给 Task-070），合并用 `--match-head-commit`，成功还需验证三字段、merge commit 已进入 main、第一父提交等于已审 base 且 tree 等于候选 tree。
+- **分布式 commit point 状态**：普通失败（exit 2–8）保持 main 零 mutation；create/merge/push/close 调用开始后若服务端可能已提交但回执、tree 或本地同步不确定，统一 exit 9 输出 `OUTCOME_UNKNOWN`、`REVIEW_REQUIRED` 或 `LOCAL_PENDING`，保留精确 PR/commit 供恢复，禁止把部分成功伪报成普通失败或盲重试。
+
+### 技术优化
+
+- `test-pr-audit.sh` 新增 18 项分类、GHE/凭证脱敏、diff mismatch、101 条截断和稳定错误合同测试；`test-pm-closeout.sh` 扩至 118 项，覆盖原 36 项及 validate-only 零写入、自建 PR 接管、create/same-content race、同文件三方合并/冲突、classic/ruleset/merge-queue 保护分流、保护中途翻转、base TOCTOU、candidate-bound 重授权、post-commit outcome-unknown/local-pending、Git/PR diff 凭证脱敏、scope/pathspec、safe-push 失败、错误 main worktree、可靠 Git operation marker（active rebase 目录拒绝、stale `REBASE_HEAD` 忽略）与最终 PR 集合漂移。
+
+### 待办事项
+
+- 真实 GitHub 非保护仓的 `PR → 隔离 main push → 本地 main 快进 → PR close`，以及保护仓的 `PR → 本地候选 → GitHub merge` 尚未在本次本地环境执行，标记 `NOT_VERIFIED`；确定性 fake-gh/throwaway Git 证据不得替代真实外部验收。
+
+## [2.14.2] - 2026-09-03
+
+### 修复（pm-monitor tmux 判活三态，Task-113）
+
+- **判活误报根因修复**：`pm-monitor.sh` 的 `check_tmux_session` 原来把三种失败折叠进同一个 `! tmux has-session` → dead 分支——① tmux 命令不在 PATH（rc=127，Monitor/受限环境常见）、② tmux 可用但控制面查询失败（socket 不可达 / Permission denied 等）、③ 目标 session 确实不存在。真实事故：Badminton Lab 本轮 `pm-monitor` 把可由 `tmux capture-pane` / `tmux has-session` 证明仍存活的 `bl112-glm53flash`、`bl113-glm53flash` 报为 `SESSION_GONE`。现新增 `tmux_session_state` 分类函数输出三态：`alive`（控制面确认存在）、`absent`（查询成功且明确无此 session：`can't find session` / `no server running`，唯一允许发 `SESSION_GONE` 的状态）、`unknown`（命令缺失或查询失败，存活不可判定）。
+- **unknown 不再冒充 dead**：控制面查询异常时输出可机器识别的 `SESSION_UNKNOWN: <session> (branch <branch>) reason=<单行原因>` + `AGENT_NEEDS_INPUT`，PM 据此知道是观察器自身故障而非 worker 死亡；同状态跨轮去重（状态机只在翻转时发事件）；从 absent/unknown 恢复存活补发 `SESSION_RECOVERED` 供撤销告警。`check_commit_staleness` 改为复用同一分类，只对确认 alive 的 session 追提交停滞告警，不用不确定的判活去骚扰可能仍存活的 worker。
+- **新增确定性回归门禁 `scripts/test-pm-monitor.sh`**：PATH shim fake tmux（模式/序列驱动，POSIX sh）+ 临时 Git 仓库，7 案例 23 断言覆盖 alive 不误报、可靠 absent 才 SESSION_GONE、socket 查询错误报 UNKNOWN、tmux 命令缺失报 UNKNOWN、同状态 3 轮去重、恢复事件；Case 4/5/6 对旧折叠实现必红（红 13 通过/10 失败 → 修复后 23/23 全绿），零外部依赖、零常驻进程。
+- **文档同步**：`SKILL.md` §7 新增 pm-monitor 判活三态说明。版本 2.14.1 → 2.14.2。
+
+## [2.14.1] - 2026-09-03
+
+### 修复
+
+- **Orca worktree 分支错配在任务注入前失败关闭**：`spawn-worker.sh` 在 worktree 落盘后、任何 terminal、Session Context、authority receipt、Task 或 `worker-start` 副作用之前执行 isolation pre-gate，机械核对目录、实际分支与 HEAD。Orca 因同名分支自动创建 `-2` 后缀分支时立即输出 `SPAWN_WORKER_ISOLATION_PREGATE_FAILED` 并退出，保留 worktree 供 PM 精确处置，不再形成“spawn 报失败但 worker 已收到任务”的 partial dispatch。
+- **收窄最终门禁职责**：launch 后的 `SPAWN_WORKER_GATE` 只保留必须等 terminal 创建后才能观察的 pane cwd 校验；branch 与 HEAD 身份由前置门禁独占，避免同一不变量在副作用前后产生不一致结论。
+
+### 技术优化
+
+- **新增真实入口回归**：`test-spawn-worker-orca.sh` 用 fake Orca CLI 实际创建 `-2` 后缀 worktree，负例断言零 terminal/run/task/worker-start 调用、零 Session Context 落盘且 worktree 保留；正例断言 worker-start 注入与 supervised METADATA 合同完整。
+- **Reviewer 证据预算**：固定 exact HEAD、diff 与受影响文件优先，外部 CI 仅在 verdict 必需时查询；环境或时序失败最多一次归因复跑，之后必须具名 `NOT_VERIFIED` 或 `REJECT`，PM 可发送 budget stop 收敛审查范围。
+
+### 文档完善
+
+- `SKILL.md` 增加 isolation pre-gate 硬约束与 Reviewer 证据预算；`references/10-parallel-lessons.md` 新增 G40 partial dispatch 复盘和 G41 evidence budget 经验。
+
 ## [2.14.0] - 2026-09-02
 
 ### 修复（验收失败恢复：internal_recoverable 不再被直接泊车）
@@ -53,6 +99,16 @@
 - **修复 renderer hook 契约（P0-② 集成断点收尾）**：P0-② 落地后 `render-runtime-profile.sh` 仍对 claude-code provider env isolation 默认追加 `--bare`，标准 render → spawn 路径被 install-guard fail-closed 拒绝，逼 PM 手工删字符串。现改为：settings/registry 两路默认渲染 hook-capable 命令（无 `--bare`），wrapper、`--setting-sources project,local`、可选 `--no-mcp` 契约不变（GLM 同配置实测无 `--bare` 可正常运行）。bare 能力保留为显式 opt-in renderer flag `--claude-bare`（仅 claude-code provider isolation 路径合法，错用 exit 64），输出上下文 isolation 标签追加 `+bare(degraded/unhooked)` 标记；spawn-worker 仍要求显式 `--allow-prompt-only-install-guard`，不恢复自动降级。新增确定性契约测试 `scripts/test-render-runtime-profile.sh`（33 断言：两路默认无 `--bare`、`--no-mcp` 保留、opt-in degraded/unhooked 标记、错用 fail-closed、标准 render 输出机械提取 spawn-worker `claude_hook_disable_reason` 检查直通、bare opt-in 反向仍被拦截）。
 - **pm-orchestrate 新增 `quota-park`（P0-③）**：配额停滞恢复交接命令。固定顺序：liveness gate（active/不确定仅 `--force` 可过）→ `worker-stop` 精确 fence+stop 旧 dispatch → 释放 METADATA 记录的 provider lease（`--resource-settled`，依赖 Orca terminal liveness 证明）→ METADATA `.recovery.quota_park` marker。worktree/session/checkpoint 全程保留；任何失败路径不释放 lease、不写 marker，绝不双活。park 后同 worktree 重启需新 session id（receipt 每会话唯一），切 provider 允许，两者仍受 quota preflight 约束。新增 `scripts/test-pm-orchestrate-handoff.sh`：正向/active 反向/stop 故障/lease 释放故障注入/`--force`/缺 `--reason`/tmux 模式反向/park 后换 session 交接 8 场景 31 断言全绿。
 - **zcode 默认不在 Claude Code/Codex backend 白名单（P0-④）**：`config/harness-backend-policy.json` 的 `hosts.claude-code`/`hosts.codex` 移除 `zcode`（额度 lane 独立、语义与订阅额度不同）。唯一启用通道 = 用户明确授权后显式编辑策略文件加回（git diff 可审计）；canonical 映射与命令身份门禁保留。`scripts/test-harness-backend-policy.sh` 同步断言 deny。
+
+## [2.10.3] - 2026-09-02
+
+### 修复
+
+- **Orca 仓库未注册自动收口（Task-111，2026-09-01 custom-skills 实测事故）**：仓库是有效 Git 仓、Orca runtime 健康但 repo 未注册时，`orca worktree current --json` 只返回 `{ok:false,error:{code:"selector_not_found"}}`，Orca 模式被静默降级为 tmux；手工 `orca repo add` 后立即恢复。`scripts/orca-runtime.sh` 的 `orca_runtime_current_project` 现在把失败原因暴露为 `ORCA_WORKTREE_CURRENT_ERROR`（`selector_not_found` / `path_mismatch` / 空=runtime 不可达·非 Git·不可解析），并新增 `orca_runtime_register_current_project`：仅在错误码精确等于 `selector_not_found`、canonical Git toplevel 可解析、`orca status --json` 可达时执行一次 `orca repo add --path <toplevel> --json`，复验 `worktree current` 精确返回该 toplevel + repo 身份才算成功。`scripts/spawn-worker-orca.sh` 的 `detect_orca_mode` 接线：注册失败、合同非 ok 或复验不匹配一律打印诊断后回退既有 tmux 路径（fail-closed，早于 branch/worktree/provider 副作用）；`--dry-run` 只打印 `ORCA_RUN` 计划不执行 mutation。已注册仓库、`--no-orca-mode`、非 Git、runtime 不可达、其他错误码一律不注册；mutation/授权边界（只注册当前这一个 Git 仓库，不触碰其他 Orca 项目）固化到 `references/13-orca-cli-worker.md` §3。
+
+### 技术优化
+
+- 新增 `scripts/test-orca-auto-register.sh`：41 用例确定性 mock 回归（fake orca CLI 经 `ORCA_CLI_COMMAND` 注入，不依赖也不改动真实 Orca 状态），覆盖 success（含 CLI 非零退出仍带错误合同）、already registered、runtime down（无 JSON / status 不可达）、non-Git、wrong error code、repo add failure、post-add path mismatch，以及 `--no-orca-mode` / DRY_RUN / path_mismatch 永不注册。
 
 ## [2.10.2] - 2026-08-31
 

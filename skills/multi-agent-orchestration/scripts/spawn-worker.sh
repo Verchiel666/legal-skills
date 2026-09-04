@@ -645,6 +645,23 @@ if [ "$DRY_RUN" -eq 0 ]; then
   INSTALL_AUTH_FILE="$SESSION_CONTEXT/INSTALL_AUTHORIZATION.json"
 fi
 
+# Isolation pre-gate（partial dispatch 修复）：cwd/branch/HEAD 在 worktree 落盘后即可
+# 判定，必须在任何 terminal/worker-start/任务注入副作用之前判定。实测事故：PM 请求
+# 复用已有 worktree/branch，Orca 自动改用 -2 后缀分支建新 worktree；旧顺序里
+# supervised register/worker-start 已注入任务，final SPAWN_WORKER_GATE 才发现
+# actual branch != expected 而 exit 2，留下带任务的半活 Dispatch。此处 mismatch 时
+# worktree 保留供 PM 精确清理，但不会产生任何 worker-start/dispatch partial effect。
+if [ "$DRY_RUN" -eq 0 ] && [ "$LIGHTWEIGHT_MODE" -eq 0 ]; then
+  pregate_branch=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
+  pregate_head=$(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null || echo "")
+  echo "SPAWN_WORKER_ISOLATION_PREGATE: cwd=$WORKTREE branch=$pregate_branch expected_branch=$BRANCH head=${pregate_head:-unresolvable}"
+  if [ ! -d "$WORKTREE" ] || [ -z "$pregate_head" ] || [ "$pregate_branch" != "$BRANCH" ]; then
+    echo "ERROR: isolation pre-gate failed before any terminal/worker-start/dispatch side effect: actual_branch=$pregate_branch expected_branch=$BRANCH head=${pregate_head:-unresolvable}（实测：复用已有 worktree/branch 时 Orca 可能已自动改用 -2 后缀分支；worktree 保留供 PM 清理，本次未注入任何任务）" >&2
+    echo "SPAWN_WORKER_ISOLATION_PREGATE_FAILED" >&2
+    exit 2
+  fi
+fi
+
 # Task-045 / G31：worktree 创建并真实化后，按项目类型补偿依赖。
 # Orca worktree 落在 ~/orca/workspaces/（独立路径树，不在主仓父链）→ Node 项目软链
 # 主仓 node_modules，否则 npm/vitest/tsc 向上解析找不到依赖、worker 无法自验。
@@ -1044,13 +1061,13 @@ dependency_install_guard_setup() {
   printf -v hook_command "bash '%s'" "$guard_hook"
   case "$WORKER_BACKEND" in
     claude-code|claude_code)
-      merge_pretool_hook "$INSTALL_GUARD_SETTINGS_FILE" "Bash|Shell|Terminal|Edit|Write|NotebookEdit" "$hook_command"
+      merge_pretool_hook "$INSTALL_GUARD_SETTINGS_FILE" "Bash|Shell|Terminal|Edit|Write|NotebookEdit|Update" "$hook_command"
       ;;
     codebuddy)
-      merge_pretool_hook "$INSTALL_GUARD_SETTINGS_FILE" "Bash|Shell|Terminal|Edit|Write|NotebookEdit" "$hook_command"
+      merge_pretool_hook "$INSTALL_GUARD_SETTINGS_FILE" "Bash|Shell|Terminal|Edit|Write|NotebookEdit|Update" "$hook_command"
       ;;
     qoderwork-cn|qoderclicn)
-      merge_pretool_hook "$INSTALL_GUARD_SETTINGS_FILE" "Bash|Shell|Terminal|Edit|Write|NotebookEdit" "$hook_command"
+      merge_pretool_hook "$INSTALL_GUARD_SETTINGS_FILE" "Bash|Shell|Terminal|Edit|Write|NotebookEdit|Update" "$hook_command"
       ;;
     *)
       echo "ERROR: backend lost dependency install guard routing: $WORKER_BACKEND" >&2
@@ -1118,16 +1135,25 @@ scope_guard_setup() {
   local hook_command
   printf -v hook_command "bash '%s'" "$scope_guard_hook"
 
+  # Write to claude-code settings（Task-114：事故后端 bl114-review-glm53flash）。
+  # claude-code 的文件编辑工具名为 Update；matcher 不含 Update 时 hook 根本不
+  # 触发，而旧实现只注入 SCOPE_GUARD_* env、不装 hook——Session Context 约束
+  # 在该后端完全不生效。必须与其他 backend 一样安装 scope-guard hook。
+  if [ "$WORKER_BACKEND" = "claude-code" ] || [ "$WORKER_BACKEND" = "claude_code" ]; then
+    merge_pretool_hook "$WORKTREE/.claude/settings.local.json" \
+      "Edit|Write|NotebookEdit|Update" "$hook_command"
+  fi
+
   # Write to codebuddy settings if backend is codebuddy or unspecified
   if [ "$WORKER_BACKEND" = "codebuddy" ] || [ -z "$WORKER_BACKEND" ]; then
     merge_pretool_hook "$WORKTREE/.codebuddy/settings.local.json" \
-      "Edit|Write|NotebookEdit" "$hook_command"
+      "Edit|Write|NotebookEdit|Update" "$hook_command"
   fi
 
   # Write to qoder settings if backend is qoderwork-cn
   if [ "$WORKER_BACKEND" = "qoderwork-cn" ] || [ "$WORKER_BACKEND" = "qoderclicn" ]; then
     merge_pretool_hook "$WORKTREE/.qoder/settings.local.json" \
-      "Edit|Write|NotebookEdit" "$hook_command"
+      "Edit|Write|NotebookEdit|Update" "$hook_command"
   fi
 
   return 0
@@ -1210,6 +1236,8 @@ if [ "$DRY_RUN" -eq 0 ]; then
   echo "SPAWN_WORKER_WORKTREE: $WORKTREE"
   echo "SPAWN_WORKER_CONTEXT: $SESSION_CONTEXT"
   echo "SPAWN_WORKER_ISOLATION_MODE: $isolation_mode_value"
+  # final gate 只保留 launch 后才能观察的事实（terminal pane cwd）。branch/HEAD 已由
+  # 上方 isolation pre-gate 在任何 terminal/worker-start 副作用之前判定完毕。
   echo "SPAWN_WORKER_GATE: cwd=$pane_cwd_physical branch=$current_branch expected_cwd=$expected_cwd expected_branch=$expected_branch"
   if [ "$pane_cwd_physical" != "$expected_cwd" ] || [ "$current_branch" != "$expected_branch" ]; then
     echo "SPAWN_WORKER_GATE_FAILED" >&2
