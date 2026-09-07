@@ -1,5 +1,69 @@
 # 变更日志
 
+## [1.8.2] - 2026-09-05
+
+### 改进
+
+- **清理规则单一来源**：新增 `references/branch-lifecycle-and-cleanup.md`，集中承载一次性/长期分支生命周期、单 Worker delivery-bound 清理、squash/rebase expected-tip 删除、批量 stale 审计和长期功能线关闭。
+- `SKILL.md` 的分支管理章节改为最短判定入口，删除与 reference 重复的命令、候选表和红线；长期集成分支 reference 继续负责建线/同步/里程碑，职责不混杂。
+
+### 安全
+
+- 保持 `long-lived`、integration target、24 小时活跃阈值、dirty Worktree、用户确认和 expected-tip 原子删除等既有边界；本次为结构优化，不放宽删除授权。
+
+## [1.8.1] - 2026-09-05
+
+### 修复
+
+- 收窄“合并后清理”为仅清理 `ephemeral-worker` 一次性 head；长期功能/集成分支及其固定 Worktree 即使里程碑已合入默认主干，也不因单 Worker 验收自动删除。
+- 分离 PR head 与 `integration_target`：短 Worker 合入长期分支时只清理 head，并要求 PR `baseRefName` 精确匹配；持久元数据声明 `long-lived` 后，调用方不得降级绕过保护。
+
+### 关联
+
+- 机械实现位于 `multi-agent-orchestration` v2.16.1；确定性回归覆盖长期目标保留、长期源分支全资源保留和生命周期防降级。
+
+## [1.8.0] - 2026-09-05
+
+### 新增
+
+- 新增编排 worker 的验收后单任务清理协议：交付完成后默认收口远端分支、worktree 与本地分支，并统一输出 `CLEANED`、`RETAINED_WITH_REASON`、`CLEANUP_PENDING`。
+
+### 安全
+
+- 清理绑定 exact PR/head、40 位 worker tip、delivery commit、远端 tip、干净 worktree 和已结算 lifecycle；查询失败、未知状态或身份漂移一律失败关闭。
+- squash/rebase merge 下不使用无条件 `git branch -D`，改为 worktree 移除后以 expected tip 为 old-value 精确删除本地 ref；清理失败作为独立债务，不重放已经确认的 merge/push。
+
+### 关联
+
+- 机械实现位于 `multi-agent-orchestration` v2.16.0 的 `pm-closeout.sh` 与 `pm-cleanup-worker.sh`；本 Skill 保持 Git 安全判据与批量清理授权边界。
+
+## [1.7.1] - 2026-09-05
+
+### 改进
+
+- 「分支清理」的 24h 时间过滤段新增机械执行指引：PR 已 `MERGED` 且分支无消费者时的即时清理，由 `multi-agent-orchestration` 的 `scripts/post-merge-cleanup.sh` 按 git-workflow 删除资格真值机械化（唯一 MERGED PR + headRefOid 精确一致 + 无 stacked child + worktree 干净 + 非长期/默认分支 + 生命周期已结算，删除后强制零残留验证）。明确即时清理是「已合并且无消费者」对 24h 规则的显式例外，只针对显式指定的单个分支；批量审计仍必须走本节完整流程。本 Skill 未改脚本与规则本身。
+
+## [1.7.0] - 2026-09-04
+
+### 新增
+
+- 新增长期集成分支模式：大型功能跨多个子 PR 或开发波次时，以具名长期分支作为功能线 `mini-main`，worker 从其最新远端基线创建短分支并显式向该分支提 PR。
+- 新增 `references/long-lived-integration-branch.md`，固定建线合同、通用修复与功能专属修改的流向、波次同步冻结、里程碑集成 PR 和分支生命周期。
+
+### 安全
+
+- 长期集成分支按默认主干同等级门禁维护，禁止 rebase、force-push、无门禁堆积或随子 PR 删除；默认主干只在无待合并子 PR 的波次边界向长期分支同步。
+- 明确 Monorepo 普通短分支的 rebase 建议不适用于长期集成主干，避免公开协作基线被改写。
+
+### 改进
+
+- 新建短分支不再一律假定以 `main` 为 base；项目声明 `integration_target` 时，从对应远端集成分支起步，并以该 ref 作为 safe-push 的完整 PR range 基线。
+
+### 决策依据
+
+- 来源：Badminton Lab 教学课程分析线需要跨多个独立 Worker/PR 长期推进，同时保持阶段成果可验收，并在具名里程碑后再集成回 `main`。
+- 职责边界：分支拓扑、Worktree、PR base、同步与合并归 `git-workflow`；`git-batch-commit` 继续只负责提交拆分与提交信息生成。
+
 ## [1.6.0] - 2026-07-13
 
 ### 新增

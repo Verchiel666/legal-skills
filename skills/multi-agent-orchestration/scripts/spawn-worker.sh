@@ -63,6 +63,7 @@ BRANCH=""
 WORKTREE=""
 SESSION=""
 BASE_REF="main"
+BRANCH_LIFECYCLE="ephemeral-worker"
 COMMAND=""
 DRY_RUN=0
 WORKER_BACKEND=""
@@ -87,6 +88,12 @@ ENV_ISOLATION=""
 WAVE_ID=""
 WAVE_WORKER_ID=""
 VERIFY_COMMANDS=()
+VERIFY_COMMAND_SOURCE=""
+REQUIRE_VERIFICATION=0
+VERIFICATION_CONTRACT=""
+VERIFICATION_TASK_ID=""
+PROJECT_CONFIG_FILE=""
+WORKER_TYPE=""
 WITH_SENTINEL=0
 SENTINEL_POLL_INTERVAL=5
 SENTINEL_MAX_WAIT=7200
@@ -181,6 +188,10 @@ parse_spawn_worker_args "$@"
 
 [ -n "$PROJECT_DIR" ] || { usage; exit 64; }
 [ -n "$SESSION" ] || { usage; exit 64; }
+case "$BRANCH_LIFECYCLE" in
+  ephemeral-worker|long-lived) ;;
+  *) echo "ERROR: --branch-lifecycle must be ephemeral-worker or long-lived (got: $BRANCH_LIFECYCLE)" >&2; exit 64 ;;
+esac
 # v2.14.0：角色与 reviewer 修复授权校验（fail-closed，任何副作用之前）
 case "$ROLE" in
   implementer|reviewer) ;;
@@ -281,6 +292,13 @@ esac
 
 PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd -P)
 
+# Resolve the task's verification contract before Orca detection, provider lease,
+# worktree creation, terminal creation, Task/Dispatch registration, or prompt
+# injection. The resulting strings are the exact Shell authority; they are never
+# tokenized, normalized, or converted into install authorization.
+resolve_verification_commands || exit $?
+validate_verification_commands || exit $?
+
 # v2.0：轻量模式判定（SKILL §2.1.1）。
 # 1. --no-worktree 显式：LIGHTWEIGHT_MODE=1，BRANCH 不必填。
 # 2. --project 不是 git 仓 且用户没显式 --worktree/--branch：自动切轻量并打印
@@ -364,6 +382,45 @@ route_suggest_autofill_provider
 # 的 env 由 PM 的 runtime profile 负责，不重复注入）。
 route_suggest_wrap_command
 
+# shellcheck source=spawn-worker-orca.sh
+source "$SCRIPT_DIR/spawn-worker-orca.sh"
+
+# v2.1（DEC-114）：ORCA 终端模式 auto-detect。必须在 detect_orca_mode / orca_worktree_create /
+# orca_terminal_create_and_send 三个 helper 定义之后调用（bash 函数先定义后调用）。
+# v2.16.0（Task-116）：整块检测提前到 quota preflight / provider lease 之前——既有
+# Worktree 预门禁（EXISTING_WORKTREE_REQUIRES_RECOVERY）必须在任何 provider lease /
+# Orca worktree create / Session Context / terminal / dispatch 副作用之前判定，
+# 而 detect_orca_mode 的 runtime 事实是门禁只命中 ORCA auto 模式的前提。
+# 命中 auto 时：
+#   - ORCA_MODE=auto
+#   - ORCA_WORKTREE_PATH = PROJECT_DIR 的 git toplevel
+#   - ORCA_WORKTREE_ID 待 orca_worktree_create() 填充（worktree 创建阶段）
+#   - ORCA_TERMINAL_HANDLE 待 orca_terminal_create_and_send() 填充（tmux 启动阶段）
+#   - ORCA_APP_VERSION / ORCA_CAPABILITIES_JSON 已从 `orca status --json` 抓取
+detect_orca_mode  # 直接调，设全局 ORCA_MODE + ORCA_APP_VERSION/CAPABILITIES_JSON/WORKTREE_PATH（不用 $() 子 shell）
+if [ "$ORCA_MODE" = "missing_orca" ]; then
+  exit 64
+fi
+if [ "$ORCA_SUPERVISED" -eq 1 ]; then
+  [ -n "$TASK_SPEC" ] || [ -n "$ORCA_TASK_ID" ] || { echo "ERROR: --orca-supervised requires --task-spec or --orca-task-id" >&2; exit 64; }
+  [ -z "$ORCA_TASK_ID" ] || [ -n "$ORCA_RUN_ID" ] || { echo "ERROR: --orca-task-id requires --orca-run-id" >&2; exit 64; }
+  [ -z "$ORCA_TASK_ID" ] || [ -n "$ORCA_COORDINATOR_HANDLE" ] || { echo "ERROR: --orca-task-id requires --orca-coordinator-handle from the Wave receipt" >&2; exit 64; }
+  [ "$ORCA_MODE" = "auto" ] || { echo "ERROR: --orca-supervised requires a current Orca-managed project" >&2; exit 64; }
+  has_orchestration=$(printf '%s' "$ORCA_CAPABILITIES_JSON" | jq -r 'any(. == "orchestration.contract.v1")' 2>/dev/null)
+  [ "$has_orchestration" = "true" ] || { echo "ERROR: Orca runtime lacks orchestration.contract.v1" >&2; exit 64; }
+fi
+if [ "$ORCA_MODE" != "auto" ] && ! command -v tmux >/dev/null 2>&1; then
+  echo "ERROR: tmux is required outside Orca terminal mode" >&2
+  exit 64
+fi
+
+# Task-116（Badminton Lab 实测事故②）：既有 Worktree 预门禁。exact branch/路径已被
+# 同 repo worktree 占用（或本地分支已存在，Orca 将生成 -2 后缀）时，在任何 provider
+# lease / Orca worktree create / Session Context / terminal / dispatch 之前稳定拒绝
+# （exit 3 + EXISTING_WORKTREE_REQUIRES_RECOVERY，零副作用）；路径不存在的新建流程
+# 零变化。仅命中 ORCA auto 模式，tmux 路径语义不变。
+spawn_worker_existing_worktree_pregate
+
 # v2.11.0（P0-①，2026-09 复盘修复）：配额预检门。自动补选与显式 --api-provider
 # 一律在任何 worktree/terminal/lease/dispatch 副作用之前通过 quota_preflight.py；
 # summary 缺失/不可读/过期/低于判停线/provider-lane 不匹配/claude-code 未解析出
@@ -404,6 +461,46 @@ quota_preflight_run() {
   exit 3
 }
 quota_preflight_run
+
+# v2.21.0（2026-09-06）：物理内存预算预检门（mem budget lane）。quota preflight 管
+# API 配额维度，本门管物理内存维度：现场探测 hw.memsize / vm_stat / memory_pressure /
+# vm.swapusage，按 per-worker 预算（默认 3GiB，SPAWN_WORKER_MEM_BUDGET_BYTES 可调）折算
+# 还能安全承诺几个 worker。额度为 0 → exit 4（专用退出码）+ SPAWN_WORKER_MEM_BUDGET_DENIED，
+# PM 不 spawn、按 §5 排队规则记 PARKED_FOR_MEMORY 下一轮巡检重试；probe 读失败同样
+# fail-closed 拒绝（坏门永远不放行）。SPAWN_WORKER_MEM_BUDGET_BYTES=0 显式关闭整道门
+# （与 NODE_OPTIONS 堆顶的 opt-out 风格一致）。每次 spawn 都现场探测、不缓存——同一任务
+# OOM 退避后 PM 重拉天然重跑 probe（§5）。数据源与推导权威：references/22-mem-budget-lane.md。
+mem_budget_gate_run() {
+  local probe_out probe_rc probe_status probe_reason
+  set +e
+  probe_out=$(python3 "$SCRIPT_DIR/mem_budget_probe.py" --json)
+  probe_rc=$?
+  set -e
+  probe_status=$(printf '%s' "$probe_out" | jq -r '.status // "unprobeable"' 2>/dev/null) || probe_status="unprobeable"
+  if [ "$probe_rc" -eq 0 ] && [ "$probe_status" = "ok" ]; then
+    printf 'SPAWN_WORKER_MEM_BUDGET: available=%s budget=%s slots=%s pressure=%s\n' \
+      "$(printf '%s' "$probe_out" | jq -r '.safe_available_bytes')" \
+      "$(printf '%s' "$probe_out" | jq -r '.budget_bytes')" \
+      "$(printf '%s' "$probe_out" | jq -r '.slots')" \
+      "$(printf '%s' "$probe_out" | jq -r '.pressure.level')"
+    return 0
+  fi
+  if [ "$probe_rc" -eq 0 ] && [ "$probe_status" = "disabled" ]; then
+    echo "SPAWN_WORKER_MEM_BUDGET: disabled (SPAWN_WORKER_MEM_BUDGET_BYTES=0)"
+    return 0
+  fi
+  probe_reason=$(printf '%s' "$probe_out" | jq -r '.reason // "probe produced no reason"' 2>/dev/null) || probe_reason="probe produced no reason"
+  if [ "$probe_status" = "denied" ]; then
+    printf 'ERROR: memory budget gate denied before any worktree/terminal/lease/dispatch side effect: %s\n' "$probe_reason" >&2
+    echo "SPAWN_WORKER_MEM_BUDGET_DENIED: 本轮不 spawn，任务记 PARKED_FOR_MEMORY 下一轮巡检重试（SKILL §5 排队规则）" >&2
+  else
+    printf 'ERROR: memory budget probe failed (rc=%s status=%s): %s; a broken gate can never pass (fail-closed)\n' \
+      "$probe_rc" "$probe_status" "$probe_reason" >&2
+    echo "SPAWN_WORKER_MEM_BUDGET_PROBE_FAILED: 内存现场不可探测，本轮不 spawn（fail-closed）" >&2
+  fi
+  exit 4
+}
+mem_budget_gate_run
 
 # shellcheck source=spawn-worker-provider-lease.sh
 source "$SCRIPT_DIR/spawn-worker-provider-lease.sh"
@@ -481,34 +578,6 @@ array_to_json() {
     printf '%s\n' "$@" | jq -R . | jq -s .
   fi
 }
-
-# shellcheck source=spawn-worker-orca.sh
-source "$SCRIPT_DIR/spawn-worker-orca.sh"
-
-# v2.1（DEC-114）：ORCA 终端模式 auto-detect。必须在 detect_orca_mode / orca_worktree_create /
-# orca_terminal_create_and_send 三个 helper 定义之后调用（bash 函数先定义后调用）。
-# 命中 auto 时：
-#   - ORCA_MODE=auto
-#   - ORCA_WORKTREE_PATH = PROJECT_DIR 的 git toplevel
-#   - ORCA_WORKTREE_ID 待 orca_worktree_create() 填充（worktree 创建阶段）
-#   - ORCA_TERMINAL_HANDLE 待 orca_terminal_create_and_send() 填充（tmux 启动阶段）
-#   - ORCA_APP_VERSION / ORCA_CAPABILITIES_JSON 已从 `orca status --json` 抓取
-detect_orca_mode  # 直接调，设全局 ORCA_MODE + ORCA_APP_VERSION/CAPABILITIES_JSON/WORKTREE_PATH（不用 $() 子 shell）
-if [ "$ORCA_MODE" = "missing_orca" ]; then
-  exit 64
-fi
-if [ "$ORCA_SUPERVISED" -eq 1 ]; then
-  [ -n "$TASK_SPEC" ] || [ -n "$ORCA_TASK_ID" ] || { echo "ERROR: --orca-supervised requires --task-spec or --orca-task-id" >&2; exit 64; }
-  [ -z "$ORCA_TASK_ID" ] || [ -n "$ORCA_RUN_ID" ] || { echo "ERROR: --orca-task-id requires --orca-run-id" >&2; exit 64; }
-  [ -z "$ORCA_TASK_ID" ] || [ -n "$ORCA_COORDINATOR_HANDLE" ] || { echo "ERROR: --orca-task-id requires --orca-coordinator-handle from the Wave receipt" >&2; exit 64; }
-  [ "$ORCA_MODE" = "auto" ] || { echo "ERROR: --orca-supervised requires a current Orca-managed project" >&2; exit 64; }
-  has_orchestration=$(printf '%s' "$ORCA_CAPABILITIES_JSON" | jq -r 'any(. == "orchestration.contract.v1")' 2>/dev/null)
-  [ "$has_orchestration" = "true" ] || { echo "ERROR: Orca runtime lacks orchestration.contract.v1" >&2; exit 64; }
-fi
-if [ "$ORCA_MODE" != "auto" ] && ! command -v tmux >/dev/null 2>&1; then
-  echo "ERROR: tmux is required outside Orca terminal mode" >&2
-  exit 64
-fi
 
 # v1.18.4：backend 分支化 trust/permission dialog 监控默认值（DEC-112）。
 # 仅在 *_OVERRIDE 标志为 0 时（即用户没显式传 flag）才按 backend 默认。
@@ -678,14 +747,14 @@ if [ "$git_identity_field_count" -eq 3 ]; then
   printf -v SAFE_PUSH_COMMAND 'bash %q --repo %q --base %q --remote %q --branch %q --expected-name %q --expected-email %q' \
     "$safe_push_script" "$WORKTREE" "$GIT_INTEGRATION_BASE" "$GIT_PUSH_REMOTE" "$BRANCH" \
     "$GIT_EXPECTED_NAME" "$GIT_EXPECTED_EMAIL"
+else
+  # v2.22.0：无 identity 四件套时 push 不再无路可走——guard 段级安全类默认放行
+  # 本分支裸 push（拒 force/主干/远端删除）。safe-push 仍是 OID 全链核验的强化路径。
+  echo "SPAWN_WORKER_PUSH_PATH: raw-safe (guard safe-class allows plain branch push; force/protected-branch/delete denied; identity quadruple recommended for OID-verified delivery)"
 fi
 
 write_install_authorization() {
   local commands_json shell_commands_json
-  # Task-046 / G31：PM 未显式传 --verify-cmd 时，按 package.json scripts 注入
-  # 默认 verify 命令（npm run typecheck/lint/test/build）到 VERIFY_COMMANDS，
-  # 让 worker 默认能跑验证门（否则 allowed_shell 仅 3 条，worker 无法自验）。
-  inject_default_verify_commands
   commands_json=$(array_to_json "${AUTHORIZED_INSTALL_COMMANDS[@]}")
   EFFECTIVE_ALLOWED_SHELL_COMMANDS=(
     "pwd"
@@ -699,6 +768,9 @@ write_install_authorization() {
     --arg schema "multi-agent-orchestration.install-authorization.v1" \
     --arg policy "deny_by_default" \
     --arg source "$INSTALL_AUTHORIZATION_SOURCE" \
+    --arg verification_source "$VERIFY_COMMAND_SOURCE" \
+    --argjson verification_required "$REQUIRE_VERIFICATION" \
+    --argjson verification_commands "$(array_to_json "${VERIFY_COMMANDS[@]}")" \
     --argjson commands "$commands_json" \
     --argjson shell_commands "$shell_commands_json" \
     '{
@@ -706,7 +778,12 @@ write_install_authorization() {
       policy: $policy,
       authorization_source: $source,
       authorized_commands: $commands,
-      allowed_shell_commands: $shell_commands
+      allowed_shell_commands: $shell_commands,
+      verification: {
+        required: ($verification_required == 1),
+        source: $verification_source,
+        commands: $verification_commands
+      }
     }')
   echo "SPAWN_WORKER_INSTALL_AUTH: $INSTALL_AUTH_FILE mode=$INSTALL_GUARD_MODE"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -743,6 +820,9 @@ write_authority_receipt() {
     --arg degradation_source "$INSTALL_GUARD_DEGRADATION_SOURCE" \
     --arg authorization_sha256 "$AUTHORITY_RECEIPT_SHA256" \
     --argjson authorization "$INSTALL_AUTH_JSON" \
+    --arg verification_source "$VERIFY_COMMAND_SOURCE" \
+    --argjson verification_required "$REQUIRE_VERIFICATION" \
+    --argjson verification_commands "$(array_to_json "${VERIFY_COMMANDS[@]}")" \
     --arg quota_preflight_status "$QUOTA_PREFLIGHT_STATUS" \
     --arg quota_preflight_lane "$QUOTA_PREFLIGHT_LANE" \
     --argjson quota_preflight_override "$QUOTA_PREFLIGHT_OVERRIDE" \
@@ -757,6 +837,11 @@ write_authority_receipt() {
       degradation_source: $degradation_source,
       authorization_sha256: $authorization_sha256,
       authorization_snapshot: $authorization,
+      verification: {
+        required: ($verification_required == 1),
+        source: $verification_source,
+        commands: $verification_commands
+      },
       quota_preflight: {
         status: $quota_preflight_status,
         lane: $quota_preflight_lane,
@@ -1159,8 +1244,31 @@ scope_guard_setup() {
   return 0
 }
 
+# v2.20.0：worker node 堆上限（2026-09-05 OOM 崩溃循环事故止血）。
+# 事故：多 worker 长输出场景下，会话内 node 进程（claude CLI / vitest / 测试脚本）
+# V8 堆无界增长 → FatalProcessOutOfMemory SIGABRT，PM 周期性重拉形成崩溃循环，
+# 极端时整机内存挤压触发 shutdown_stall 强制重启。注入 NODE_OPTIONS old-space
+# 上限：worker 到限自身退出（sentinel 记 failed，PM 按 §5 OOM 规则退避），不再拖垮系统。
+# 与 scope_guard 的 env 包装同模式（tmux new-session / Orca terminal 均经 shell 解析 COMMAND）。
+# 默认 2048MB；SPAWN_WORKER_NODE_MAX_OLD_SPACE_MB=0 显式关闭；环境已有 NODE_OPTIONS
+# 时跳过（不覆盖用户显式配置，只打印提示）。
+node_mem_cap_setup() {
+  local cap_mb="${SPAWN_WORKER_NODE_MAX_OLD_SPACE_MB:-2048}"
+  if [ "$cap_mb" = "0" ]; then
+    echo "SPAWN_WORKER_NODE_MEM_CAP: disabled (SPAWN_WORKER_NODE_MAX_OLD_SPACE_MB=0)"
+    return 0
+  fi
+  if [ -n "${NODE_OPTIONS:-}" ]; then
+    echo "SPAWN_WORKER_NODE_MEM_CAP: skipped, NODE_OPTIONS already set by caller: $NODE_OPTIONS"
+    return 0
+  fi
+  COMMAND="env NODE_OPTIONS=--max-old-space-size=${cap_mb} $COMMAND"
+  echo "SPAWN_WORKER_NODE_MEM_CAP: --max-old-space-size=${cap_mb}MB (opt-out: SPAWN_WORKER_NODE_MAX_OLD_SPACE_MB=0)"
+}
+
 dependency_install_guard_setup
 scope_guard_setup
+node_mem_cap_setup
 write_metadata
 
 exclude_file=$(git -C "$WORKTREE" rev-parse --git-path info/exclude 2>/dev/null || echo "")

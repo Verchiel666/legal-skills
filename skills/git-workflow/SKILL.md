@@ -1,10 +1,11 @@
 ---
 name: git-workflow
-homepage: https://github.com/cat-xierluo/legal-skills
-author: 杨卫薪律师（微信ywxlaw）
-version: "1.6.0"
+description: Git 工作流安全助手。本技能应在需要执行分支管理、长期集成分支（long-lived integration branch）、Monorepo 安全合并、PR 创建/审查/合并、冲突处理、cherry-pick、安全回退、stale/已合并分支审计与清理（branch cleanup，含 squash/rebase merge 校验）、开 worktree 前 base 同步检查（防 main drift 致 PR not mergeable）、多 worktree 并行时 main worktree 占用处理时使用。不要用于：批量生成提交信息、项目任务分配、长期任务状态管理或本地多 Agent 会话编排。
 license: MIT
-description: Git 工作流安全助手。本技能应在需要执行分支管理、Monorepo 安全合并、PR 创建/审查/合并、冲突处理、cherry-pick、安全回退、stale/已合并分支审计与清理（branch cleanup，含 squash/rebase merge 校验）、开 worktree 前 base 同步检查（防 main drift 致 PR not mergeable）、多 worktree 并行时 main worktree 占用处理时使用。不要用于：批量生成提交信息、项目任务分配、长期任务状态管理或本地多 Agent 会话编排。
+metadata:
+  version: "1.8.2"
+  homepage: https://github.com/cat-xierluo/legal-skills
+  author: 杨卫薪律师（微信ywxlaw）
 ---
 
 # Git 全流程工作流
@@ -12,6 +13,7 @@ description: Git 工作流安全助手。本技能应在需要执行分支管理
 ## 触发场景
 
 - 分支创建、切换、管理
+- 长期集成分支及其子 PR、里程碑 PR 管理
 - 合并代码到 main（特别是 Monorepo 仓库）
 - 创建、审查、合并 PR
 - 解决合并冲突
@@ -71,10 +73,16 @@ bash scripts/check-outgoing-identities.sh \
 
 ### 创建新分支
 
+普通短分支从最新默认主干创建；项目若已显式声明长期集成目标，则 worker 短分支必须从最新远端集成目标创建，不能仍默认从 `main` 起步。
+
 ```bash
 # 从最新 main 创建
 git checkout main && git pull origin main
 git checkout -b <type>/<short-description>
+
+# 从长期集成目标创建 worker 短分支
+git fetch origin
+git switch -c <type>/<short-description> origin/<integration-branch>
 
 # 命名规范
 feat/add-ocr-support
@@ -112,110 +120,30 @@ subagent-fix-copy
 team-feature-a
 ```
 
+### 长期集成分支模式
+
+仅当一个大型功能需要跨多个可独立验收的子 PR 或多个开发波次、但整体尚不应进入默认主干时，才显式建立长期集成分支。普通功能仍使用短分支直接向默认主干提 PR；不要把长期分支当作无门禁 WIP 仓库。
+
+长期集成分支是单一功能线的阶段主干（mini-main），必须遵守与默认主干同等级的 review、测试、身份和 push 门禁：
+
+- 默认主干保存项目稳定基线；长期集成分支只聚合该功能线；worker 短分支承载一次性子任务。
+- 长期分支由固定集成者/PM Worktree 独占检出；worker 从最新 `origin/<integration-branch>` 建独立短分支和 Worktree，并显式把 PR base 指向该集成分支。
+- 子 PR 经独立验收后 squash merge 到长期分支；达到预先命名且有退出条件的里程碑后，才由长期分支向默认主干提集成 PR。
+- 默认主干的通用修复先进入默认主干，再在无待合并子 PR 的波次边界 merge 到长期分支；同步后冻结本波 base，避免 worker 基线漂移。
+- 长期分支禁止 rebase、force-push 或随子 PR 删除；里程碑合入默认主干后也继续保留，直到功能线被明确关闭。
+
+执行建线、同步、PR、里程碑和清理时，读取 `references/long-lived-integration-branch.md`。项目专属的分支名、固定 Worktree 路径、任务字段和里程碑门禁留在项目规则中，不写入本通用 Skill。
+
 ### 分支清理
 
-合并后的分支应及时删除：
+先区分生命周期，再决定清理范围：
 
-```bash
-# 删除本地分支
-git branch -d <branch-name>
+- 一次性 `ephemeral-worker` 在交付、PR/head、expected tip、干净 Worktree 与 lifecycle settlement 全部绑定后，默认随单任务收口清理。
+- `long-lived` 功能/集成分支及固定 Worktree 不进入单任务自动清理，也不进入常规 stale 批量候选；短 Worker 合入长期分支时只清理 head，绝不触碰 `integration_target`。
+- 单任务收口结果必须是 `CLEANED`、`RETAINED_WITH_REASON` 或 `CLEANUP_PENDING`。交付已确认后的清理失败不得重放 push/merge，也不得被隐去。
+- 批量审计必须组合 PR 状态、最后提交时间、Worktree/dirty 状态和分支身份，向用户展示候选并取得确认；不得仅凭 `--merged`、ahead/behind 或分支名删除。
 
-# 删除远程分支
-git push origin --delete <branch-name>
-```
-
-### 批量审计：已合并分支清理
-
-仓库累积了一批已合并 PR 后做集中清理时，**不要**只用 `git branch --merged main` 判断。
-
-**核心陷阱**：`git branch --merged` 只识别"提交可达"，对 **squash merge** / **rebase merge** 一律失效——main 上的合并 commit 是新生 SHA，原分支 tip 不在 main 历史里，分支会被误判为未合并。
-
-**陷阱 2（活跃分支误判,2026-06-30 实战教训）**：`--merged main` 也会**反向误判**——一个**刚创建、工作还没 commit** 的活跃分支会停在 main commit（没分叉），从而显示"已合并"。只看 `--merged` 会把"刚开展、未提交"的进行中工作当成 stale 删掉。**`--merged main` 两个方向都不可靠**：squash merge 漏判（陷阱 1）+ 活跃分支误判（陷阱 2）。
-
-**权威依据**：PR 在远端的 `state == MERGED` **+ 分支最后提交时间**。时间是最稳的"活跃度"信号——见下方时间过滤。
-
-#### 时间过滤（活跃度判定的主信号,2026-06-30 加）
-
-`--merged` / PR 状态只能判"工作是否进 main",判不了"分支是否还在被用"。**最后提交时间**才是活跃度主信号：
-
-```bash
-# 远程分支 + 最后提交日期(旧→新排序)
-git for-each-ref --sort=committerdate refs/remotes/origin/ \
-  --format='%(committerdate:short) %(refname:short)' | grep -v 'origin/HEAD'
-# 本地分支同理:refs/heads/
-```
-
-**默认阈值:最后提交 < 24h 的分支一律保留(活跃,可能是刚开展/重跑的工作),不得删除。** 只有 > 24h(可配置,如 7 天更稳)的才进删除候选。时间过滤 + PR 状态 + 下面三查,缺一不可。
-
-#### 审计流程
-
-```bash
-# 1. 快照当前状态
-git branch -vv                   # 本地分支 + 跟踪信息
-git branch -r                    # 远程分支
-git worktree list                # worktree 占用情况
-
-# 2. 列候选（仅作为参考，不能作为删除依据）
-git branch --merged main
-git branch -r --merged origin/main | grep -v 'origin/main\|origin/HEAD'
-git branch --no-merged main
-git branch -r --no-merged origin/main | grep -v 'origin/main\|origin/HEAD'
-
-# 3. 关键：用 PR 状态交叉验证（squash/rebase merge 必须）
-gh pr list --state merged --search "head:<branch>" \
-  --json number,title,mergedAt
-
-# 或批量映射近期 PR ↔ 分支
-gh pr list --state all --limit 50 \
-  --json number,state,headRefName,mergedAt,closedAt
-```
-
-#### 判定规则
-
-| 信号 | 处理 |
-|------|------|
-| 分支 tip 可达 `main`（Step 2 "merged" 输出） | 安全删除（merge commit 形式） |
-| `gh pr list --state merged` 能查到对应 PR | 安全删除（squash / rebase merge） |
-| `gh pr list` 显示 `state == CLOSED` 且非 `MERGED` | **询问用户**：工作可能已废弃，但分支不一定该删 |
-| 本地分支无对应远程 PR 且未推送 | **询问用户**：可能是未推送的 WIP |
-| 远程跟踪 ref 在远端已不存在 | `git fetch --prune` 或 `git remote prune origin` 清理本地引用 |
-| **最后提交 < 24h**(任一分支,本地/远程) | **保留——活跃,可能是刚开展或刚重跑的工作**(陷阱 2)。即使 `--merged main` 也别删 |
-| worktree 有未提交改动(`git -C <wt> status` 非空) | **保留 worktree + 分支,绝不 `--force` 删**。`--force` 会丢弃未提交工作 |
-
-辅助指纹：`git rev-list --left-right --count main...origin/<branch>` 返回 "ahead N, behind 1" 是 squash-merged 的典型形态（分支自身的 commits 不在 main，main 的 squash commit 不在分支）。它是**提示**而非证据，仍以 `gh pr list` 为准。
-
-#### 删除（fail-closed，必须先取得用户确认）
-
-向用户展示候选表后再批量删除：
-
-| 分支 | 本地 | 远程 | PR | 判定 |
-|------|------|------|----|----|
-| feat/foo | 无 | 有 | #27 MERGED | 安全删除 |
-| fix/bar | 有 | 有 | #28 MERGED | 安全删除 |
-| wip/baz | 有 | 无 | — | 询问用户 |
-
-```bash
-# 批量删除远程分支
-git push origin --delete <b1> <b2> <b3>
-
-# 删除本地分支（先 -d；refuse 后再讨论是否升级到 -D）
-git branch -d <branch>
-
-# 清理本地的 stale 远程跟踪 ref
-git fetch --prune
-# 或 git remote prune origin
-```
-
-#### 红线（fail-closed）
-
-- ❌ **仅凭 `git branch --merged` 删除**：在 squash/rebase merge 仓库会漏判，在 merge commit 仓库才完整。
-- ❌ **仅凭 ahead/behind 删除**：WIP 分支也会"ahead 多个 commit"。
-- ❌ **把 `CLOSED` 当 `MERGED`**：closed-without-merge 是被废弃，删除前必须问用户。
-- ❌ **跳过用户确认直接 `git push origin --delete`**：远端删除对协作者可见，难撤销。
-- ❌ **删最后提交 < 24h 的分支**(2026-06-30 教训):活跃分支可能停在 main commit、`--merged` 显示已合并,但实际是刚开展/重跑的工作。必须先 `git for-each-ref`(时间)过滤。
-- ❌ **盲用 `git worktree remove --force`**:先 `git -C <worktree> status --short`,有未提交改动就停——`--force` 会丢弃。误删活跃 worktree 的未提交工作只能靠重跑恢复。
-- ❌ **只凭 `--merged main` 删本地分支/worktree**:陷阱 1(squash 漏判)+ 陷阱 2(活跃分支误判)两个方向都不可靠;必须 PR 状态 + 时间 + 未提交三查。
-- ❌ **用 `git branch -D` 强删本地以"对齐远端"**：会丢未推送的 WIP。
+完整的单 Worker 自动清理、squash/rebase expected-tip 删除、批量 stale 审计、长期功能线关闭与红线统一读取 `references/branch-lifecycle-and-cleanup.md`。
 
 ### Worktree（工作树）
 
@@ -334,6 +262,8 @@ ls .gitignore .env 2>/dev/null  # 确认关键文件还在
 ### GitHub PR 合并
 
 若用 GitHub PR 合并 Monorepo 中的某个 Skill 改动：
+
+> 下列 rebase 流程只适用于普通短分支。已声明为长期集成分支的阶段主干禁止 rebase/force-push，改为按 `references/long-lived-integration-branch.md` 在波次边界 merge 最新默认主干；其 worker 短分支仍按项目策略处理。
 
 1. **先 rebase** feature 分支到最新 main，确保 base commit 包含所有文件
 2. 确认 PR diff 只涉及目标 Skill 目录
@@ -1003,6 +933,8 @@ git checkout main
 
 ## 参考资源
 
+- `references/branch-lifecycle-and-cleanup.md` — 一次性/长期分支判定、单 Worker 自动清理、批量 stale 审计与长期功能线关闭
+- `references/long-lived-integration-branch.md` — 长期集成分支的适用条件、拓扑、同步方向、波次与里程碑门禁
 - `references/issue-pr-format.md` — Issue 与 PR 命名详细规范
 - `references/gh-cli-quickref.md` — gh CLI 常用命令速查
 - `scripts/check-outgoing-identities.sh` — feature/PR push 前完整 PR range 的 author/committer 身份门禁

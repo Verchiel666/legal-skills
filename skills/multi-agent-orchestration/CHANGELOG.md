@@ -1,5 +1,257 @@
 # Changelog
 
+## [2.22.0] - 2026-09-06
+
+### 新增
+
+- Worker 默认执行权限放大（用户决策 2026-09-06：worker 隔离在专属分支 worktree 内，push+PR 是必要交付路径，常规读取不应因复合形式被拦）。`scripts/dependency-install-guard.py` 安全类从「裸命令白名单」升级为「分段校验」：命令按顶层 `;`/`&&`/`||`/`|` 切段，每段独立过段级白名单（安全读 + 安全交付），全部通过才放行。
+- 段级白名单新增：`git push`（本分支裸 push / `-u origin HEAD` / refspec 到 feature 分支；拒 `--force`/`-f`/`--force-with-lease`、拒 main/master 目标、拒 `:branch` 远端删除与 `+src:dst` 强推、拒 `--mirror`/`--tags`/`--delete`/`--receive-pack`）、`git rebase`（拒 `--exec`/`-x` 执行逃逸）、`git branch` 展示 flag、`git remote -v`、`git ls-remote`、`git fetch`（拒 `--upload-pack` file:// 执行逃逸）、`gh auth status`、`gh repo view`、`echo`/`which`/`type`/`jq`/`sort`/`uniq`/`cut`/`tr`/`basename`/`dirname`/`diff`、`command -v`、`node`/`npm`/`pnpm`/`yarn`/`bun`/`python3` 版本查询。
+- 复合只读管道默认放行：`git status && git log --oneline -5`、`grep -rn X src | head -20`、`git log --format=%s | sort | uniq -c | sort -rn | head` 等（此前裸读命令放行但一加管道/分号即被拦，r4/r8/gov-03 实测 15+ 次误拦）。重定向仅允许 `/dev/null`、`&1`/`&2` 与临时目录（`/tmp/`、`/private/tmp/`、`/var/folders/`、`$TMPDIR`；拒绝 `..` 穿越）；子 shell、输入重定向、heredoc、命令替换仍拒。
+- `templates/worker-prompt.md` push 政策改写：本分支 push 默认放行（force/主干/删除仍拒），identity 四件套绑定的 safe-push 仍是 OID 全链核验的强化替代；`SKILL.md` §3.3 新增「Worker 默认执行权限」条目；`references/10-parallel-lessons.md` G31 方向 B 补 v2.22.0 落地注记。
+
+### 修复
+
+- `scripts/spawn-worker-metadata.sh`：`execution_authority.git_identity.raw_git_push_allowed` 由恒 `false` 改为 `true`，与 guard 实际行为一致（此前 metadata 声称裸 push 被拒，与安全类语义脱节）。`spawn-worker.sh` 在 identity 四件套缺失时输出 `SPAWN_WORKER_PUSH_PATH: raw-safe` 账本行，push 路径不再静默。
+- `scripts/dependency-install-guard.py` Orca 协议校验：`check` 子命令补 `--terminal` 选项——preamble 教 worker 用 `orca orchestration check --terminal <handle>` 收协调消息，但该形式不在合法选项集内被 fail-closed 拦截（gov-03 实测 worker 连轮询 PM 消息都被拦）。
+
+### 非目标（边界）
+
+- 验证命令（`pnpm test`/`npm run build` 等）仍走 9dfb4a14 的合同绑定路径（`--verify-cmd` / `--verification-contract` → `allowed_shell_commands` 精确串），不默认放行：保持派发合同对验证权威的单一来源。
+- `gh api`（通用读写 API）、`gh repo sync`（fork 分支强制覆盖）、安装类命令、`xargs`（读管道转任意执行）、`awk`（system 转义）、env 前缀命令、`git -C` 仍 fail-closed，需精确 `--allow-shell-command` / `--allow-install-command`。
+- 不改 identity 四件套语义：safe-push 绑定、author/committer 身份注入、OID 校验推送不变，仅不再是 push 的唯一通路。
+
+### 验证
+
+- `bash scripts/test-dependency-install-guard.sh`：新增 35 个门禁用例（push 放行 4 + push 拒绝 7 + 复合读/重定向/版本查询/gh/jq/filter 链 17 + 穿越/upload-pack/逃逸加固 2 + 协议 `--terminal` 1 + 既有语义回归 4），全量 113/113 通过；metadata 断言同步 `raw_git_push_allowed == true`。
+- `bash scripts/test-spawn-worker-verification.sh` 13/13、`bash -n scripts/spawn-worker.sh` 通过（相邻合同不受影响）。
+- 真机事故复盘锚定：dsh-contract-copilot gov-01/03（2026-09-06）15 次被拦命令中，`git push` 三形态、`gh repo sync`、`gh api` 修复后分别落入放行/继续拒绝的预期桶；`ls 2>/dev/null; ...`、`grep | head` 复合读恢复可用。
+
+## [2.21.2] - 2026-09-06
+
+### 新增
+
+- SKILL §3.1 第 6 条 + §5「验证负载纪律（verification lane）」：worker 自验默认 scoped（单 spec / 定向用例 / `--bail 1`）；全量套件单一在飞、跨项目互斥——确需现场跑全量时先探测既有全量测试进程（如 `pgrep -fl 'vitest|pytest|jest|go test'`），无法确认独占即退避或改 scoped（探测是尽力而为的现场信号，不建跨项目锁文件，宁可少并发不可误并发）；PM 收口时的串行全量复跑是全量验证的默认归宿。验证输出一律重定向日志文件、只回传有界尾部（如 `tail -50`）——长输出无界刷屏是会话侧 node 运行时 OOM 的喂食管。本纪律约束验证类别而不约束 worker 数量；与单进程堆顶（v2.20.0）、物理内存 lane（v2.21.0）互补：堆顶管单进程失血点，mem lane 管总量承诺，本纪律管验证执行的并发类别与输出体量。
+- `templates/worker-prompt.md` Verification Floor 新增 scoped-first 解读与验证负载纪律条（全量探测独占 + 输出有界）；既有 "typecheck, tests, and build" 底线按 scoped 优先解读。
+
+### 非目标（边界）
+
+- 不建跨项目验证互斥锁文件或全局注册表：与物理内存 lane 同哲学（现场探测、不建注册表），接受尽力而为的互斥精度，不做机械强制。
+- 不改 `scripts/dispatch-value-gate.py` 的 spec schema（`dispatch-value-gate.v2` 不加字段）：纪律落在 PM 派发合同撰写层与 worker 行为层，不动门禁脚本合同。
+- 不改 §3.1 第 5 条的每波/全局活跃 worker 数策略：本纪律不限制 worker 派发数量。
+
+### 验证
+
+- 前向行为测试（无旧上下文 subagent 冷读修改后 SKILL §3.1/§5 与 worker-prompt Verification Floor，两场景：4 worker 并行派发含 2 个全量验收任务 / "让 worker 各自全量跑以加速收口"压力场景）——派发计划保留全部 worker 数量、自验 scoped、全量串行或归 PM 收口、输出有界、压力场景正确拒绝。
+- `bash scripts/test-dispatch-value-gate.sh` 34/34、`bash scripts/test-spawn-worker-verification.sh` 13/13 回归通过（本次未改脚本，确认相邻合同不受影响）。
+
+## [2.21.1] - 2026-09-06
+
+### 修复
+
+- `scripts/mem_budget_probe.py` memory_pressure 百分比兜底路径补齐钳位：`available = total × pct/100` 后与 vm_stat 主路径一致地取 `min(available, total)`，病态快照（可用百分比 >100%）不再虚增可用内存（references/22 §3 声明的 [0, total] 钳位至此两条基准路径全覆盖）。
+- SKILL §5 OOM 识别信号脱敏：本机崩溃报告路径 `~/Library/Logs/DiagnosticReports/node-*.ips` 改为抽象表述「系统崩溃报告目录（DiagnosticReports）中 node OOM 报告新增且时间吻合」，识别信号保留、随行 doc 资产不再含本机路径（DEC-141 边界）。
+
+### 验证
+
+- `scripts/test-mem-budget-probe.py` 53/53 通过：新增病态 fixture 用例（memory_pressure 可用百分比 150% 时 `availability_basis=memory_pressure_percent` 且钳位到物理总量），既有 52 项全量回归。
+- `bash -n scripts/spawn-worker.sh` 语法回归通过（本次未改其逻辑）。
+
+## [2.21.0] - 2026-09-06
+
+### 新增
+
+- 新增物理内存预算预检门 `scripts/mem_budget_probe.py`：读 hw.memsize 与 vm_stat / memory_pressure / vm.swapusage 现场快照，输出 `memory-budget.summary.v1` JSON（可用安全内存、swap 压力信号、按 per-worker 预算折算的可派发额度）；读取失败 exit 1 且不输出额度（fail-closed，绝不编造）。
+- per-worker 预算默认 3 GiB（agent 本体约 1.2 GiB + 测试/构建余量约 2 GiB，与 v2.20.0 堆顶量级对齐）；`SPAWN_WORKER_MEM_BUDGET_BYTES` 可调（非法值 fail-closed），`=0` 显式关闭整道门。压力分级收紧：warn 把可承诺额度折半、critical 额度归零。
+- `spawn-worker.sh` 在任何 worktree/terminal/lease/dispatch 副作用之前接线内存门：额度不足以专用退出码 4 拒绝并输出 可用/预算/缺口 诊断与 `SPAWN_WORKER_MEM_BUDGET_DENIED` 稳定标记；放行输出 `SPAWN_WORKER_MEM_BUDGET: available=… budget=… slots=…` 账本行；probe 读失败同样 fail-closed 拒绝（坏门永远不放行）。
+- SKILL §5 新增排队规则：额度不足不 spawn、本轮记 `PARKED_FOR_MEMORY`、下一轮巡检重试，同一任务连续 3 轮不足泊车并向用户报告（附 probe 输出）；OOM 退避重拉前必须重跑 probe（每次 spawn 现场探测、不缓存）。
+- SKILL §6 收口清单新增第 6 条：`STATUS=done` 但进程仍存活的 worker（含跨会话遗留）当轮即触发收口或上报，滞留进程持续挤占物理内存派发额度。
+- 新增 `references/22-mem-budget-lane.md`（数据源、预算推导、排队状态机、与 OOM 退避交互、维护矩阵）；维护矩阵 `references/19-maintainer-validation.md` 收录 `test-mem-budget-probe.py`。
+
+### 非目标（边界）
+
+- 不建跨项目全局 worker 注册表/文件锁：现场物理探测天然覆盖跨项目占用。probe 只读、只做派发门槛，不做自动杀进程、自动降级、swap 清理等任何回收动作。quota lane 既有语义不变。
+
+### 验证
+
+- 新增 `scripts/test-mem-budget-probe.py` 52/52 通过：vm_stat（16k/4k page size、行集差异、缺关键行/表头）、memory_pressure（关键词句式、百分比句式、垃圾输入）、vm.swapusage（M/G 后缀、零 swap）解析；swap 高压 warn 折半、critical 归零；全读失败 exit 1 且 payload 无额度字段；`--json` schema 字段稳定（key set 逐字段钉住）；预算 env 覆盖与 `=0` 直通；真实机器 smoke 现场读源。E2E（fake Orca CLI，与真实 runtime 隔离）：低内存 fixture 专用退出码 4 + 诊断 + 零 worktree/terminal 副作用 + 无 Session Context 残留；健康 fixture 放行并输出账本行；`=0` 低内存直通。
+- 既有矩阵回归：`test-spawn-worker-orca.sh` 104/104、`test-spawn-worker-flags.sh` 31/31、`test-spawn-worker-deps.sh` 18/18、`test-spawn-worker-verification.sh` 13/13、`bash -n scripts/spawn-worker.sh` 通过。
+
+## [2.20.0] - 2026-09-05
+
+### 新增
+
+- `spawn-worker.sh` 新增 `node_mem_cap_setup`：worker 会话默认注入 `NODE_OPTIONS=--max-old-space-size=2048`（`SPAWN_WORKER_NODE_MAX_OLD_SPACE_MB` 可调，`=0` 关闭；调用方已设 `NODE_OPTIONS` 时跳过不覆盖）。与 scope-guard 同款 `env` 前缀包装，tmux 与 Orca terminal 路径均生效。
+- SKILL §5 新增 Worker node OOM 识别与退避规则：退出码 134 / SIGABRT / `FatalProcessOutOfMemory` 判定后同任务不得立即重拉（下一轮巡检 + 全局并发 -1），连续 2 次 OOM 停止重拉、泊车并上报。
+
+### 背景与动机
+
+- 2026-09-05 事故复盘（badminton-lab 机器）：多 worker 长输出场景下，会话内 node 进程（agent CLI / vitest worker）V8 堆无界增长触发 `FatalProcessOutOfMemory → SIGABRT`，PM 周期性重拉形成崩溃循环（单日 4 崩），并叠加整机内存挤压导致一次 shutdown_stall 强制重启。上游排查结论：Orca 本体（daemon/runtime）跨全部崩溃时刻存活，非宿主缺陷；止血责任在本编排层——堆上限让 worker 到限自身退出（sentinel 记 failed），退避规则阻断"更用力重试"的循环放大。
+
+### 验证
+
+- `bash -n` 语法通过；注入输出行 `SPAWN_WORKER_NODE_MEM_CAP` 进 PM 日志可审计；dry-run 路径不新增副作用（包装只改 COMMAND 字符串）。
+
+## [2.19.0] - 2026-09-05
+
+### 新增
+
+- 新增 zcode 额度 lane 的 summary 生产适配器 `scripts/quota_summary_zcode.py`：把本机 zcode-quota 监测器（`~/bin/zcode-quota`，个人脚本）的真实观测（BigModel coding plan 5h 窗口余量与重置时刻）转成 `quota-aware-routing.summary.v1` 的 zcode fuel lane，供既有 `quota_preflight.py` / `route_suggest.py` 消费。数据源优先级 `--stdin-obs`（watch 钩子直连）> watch-log 尾读（默认 300s 新鲜度）> `--json` 现场拉取；全部失败 exit 1 且不写文件（fail-closed，绝不编造 lane 数据）。
+- 确立多生产方合并语义：只替换 zcode lane，其余 lane 与 `generated_at` 原样保留——合并方不替其他生产方"续期"，生产方停摆必须表现为整体 stale 被预检门拒绝，而不是被 zcode lane 的刷新掩盖；写入原子（tmp + `os.replace`），lane 记录带 `updated_at`/`source` 溯源附加键。
+- 新增 `references/21-zcode-quota-producer.md`：公私边界（凭证解密逻辑永不进入公开仓库）、数据流、启用方式、fail-closed 行为表与第二期接线点（spawn 侧 provider 映射、429 恢复前置额度确认）。
+
+### 技术优化
+
+- 公开技能对 zcode 额度保持"中立合同消费方"定位：适配器只消费 zcode-quota 的输出（stdin/日志/CLI），不直接调用官方接口、不读取或解密 `~/.zcode/v2/credentials.json`。
+
+### 验证
+
+- 新增 `scripts/test-quota-summary-zcode.py` 10/10 通过：覆盖数据源回退链（stdin 优先、日志过期回退现场拉取、全失败 exit 1 且文件原样）、合并语义（其他 lane 与 generated_at 保留、自定义 lane 名）、字段映射（remaining 钳位 [0,100]、epoch ms→ISO、可缺省 resets_at、跳过 tokens_pct 缺失行），以及与 `quota_preflight.py` 的联动（余量充足放行 `ok`、判停线拒绝 `lane_below_stop_line`）。
+- 真实环境接入验证通过：zcode lane 合并进既有 route-summary（glm-api/minimax/codebuddy-hy4/autoclaw 四条 lane 原样保留）；`zcode-quota --watch` 经 `ZCODE_QUOTA_SUMMARY_HOOK` 每 120s 自动刷新 zcode lane（source=stdin，含真实 `resets_at`）。
+
+### 待办事项
+
+- 第二期接线（本期未动 spawn 行为）：`spawn-worker.sh` 对 `--worker-backend zcode` 显式以 `provider=zcode` 走预检门（当前 `not_applicable` 放行）；`orca_rate_limit_recovery.py` 唤醒前确认 5h 窗口真实余量。
+- 自动讨卡/用卡动作不进入编排链：自动用卡已被用户明确禁止；自动讨卡如需接入必须另设显式授权门。
+
+## [2.18.0] - 2026-09-05
+
+### 新增
+
+- 接通 `dispatch-value-gate.v2` 的 `verification_commands` 到 spawn：新增 `--verification-contract + --verification-task-id`，以唯一 task 为权威原样写入进程授权快照、Git common-dir authority receipt、METADATA 与精确 Shell allowlist；实现/可复用验证任务解析为空时在任何 Worker 副作用前拒绝。
+- 正式消费项目 `.claude/orchestration.config.json` 的 `verification.default/by_worker_type`，新增 `--project-config`、`--worker-type` 与 `verification.required`；嵌套 Python 项目可显式声明完整 `cd ... && python3 -m unittest ...` 命令，unknown type、畸形/空配置均失败关闭。
+- 新增 `--require-verification` 与根 Python 项目有界发现：仅根 Python manifest 与根 `tests/` 同时存在时注入固定 unittest discover，不递归搜索或猜测 pytest/tox/nox。
+
+### 修复
+
+- 修复 PM 已在任务合同声明验证命令、但派发时漏转抄，导致 Worker 首次自验普遍触发 `SHELL_COMMAND_NOT_ALLOWLISTED` 的系统性断点。命令保持单一完整字符串，不开放全 Shell、通配、泛化 `cd` 或 hook 绕过。
+- 空白、换行、重复、安装型验证命令和 CLI/合同双权威冲突现在均在 worktree、terminal、Task、Dispatch、provider lease 与任务注入前拒绝；安装授权继续使用独立显式通道。
+- 独立复审补强 JSON 边界：项目配置或 dispatch 合同中的验证字符串只要包含 U+0000，即在 NUL 分隔解码前拒绝，不能再把一条恶意/畸形字符串拆成多条合法授权。项目模板移除与 `verification.required:true` 必然冲突的 docs/research 空 profile；docs-only 任务仍按价值门禁止独立派发。
+
+### 验证
+
+- 新增 `test-spawn-worker-verification.sh` 确定性矩阵，覆盖合同/项目配置正例、嵌套 Python 原样保真、unknown worker type、required-empty、畸形配置、重复/安装型命令、双权威冲突、Python 有界发现、merge gate 空命令及两类 U+0000 逃逸负例。
+- 扩展依赖 Shell 门禁测试，直接证明示例嵌套 unittest 命令完整精确授权可首次通过，而少一个参数的近似命令仍被拒绝；Node/Make 默认注入、metadata 与 flag 回归保持通过。
+- 验证命令合同 13/13、dependency/Shell guard 73/73、Node/Make/Python deps 18/18、flags 31/31、metadata 22/22、存量 supervised reauthorize 113/113 通过；维护矩阵其余测试与 Orca/fake control-plane smoke 通过。tmux smoke 首轮受当前真实 Orca 自动注册影响触发既有 isolation pre-gate，以 `ORCA_CLI_COMMAND=/usr/bin/false` 隔离后复跑通过。
+- 所有 Shell `bash -n`、Skill quick validation 与 Git whitespace 检查通过；security scan 为 0 critical / 0 high。Harness failure audit 保留全 Skill 既有 6 条 hard finding（1 条清理脚本通用命中、5 条旧测试退出码模式），本次没有新增类别。
+
+### 待办事项
+
+- 本轮未启动真实 Orca Agent 验证 `worker_done → Delivery` 外部生命周期，标记 `NOT_VERIFIED`；存量 Worker 继续使用 `pm-orchestrate.sh reauthorize --allow-cmd` 重建不可变进程快照。
+
+## [2.17.0] - 2026-09-05
+
+### 新增
+
+- 新增 Orca-only `orca_rate_limit_recovery.py`：以显式 `terminal_handle + incarnationId + provider + account_group` 清单跨项目巡检 Worker，区分 `RUNNING`、`RATE_LIMIT_RETRYING`、`RATE_LIMIT_IDLE`、`UNKNOWN`；默认只读，只有 `--execute` 才对高置信 idle episode 通过 terminal 输入通道发送固定“继续”。
+- 新增 provider/account group 分组错峰、`handle + incarnation + cursor + timestamp + evidence` episode 幂等、私有 owner/symlink 防护状态、非阻塞锁、发送前 identity/cursor/idle 复核和发送后 identity 复核。发送结果只记 `WAKE_ACCEPTED`，不冒充额度或业务恢复。
+
+### 改进
+
+- 从 `pm-quota-stall.sh` 抽出共享 `provider_error_classifier.py`，统一 auth/config/network/quota 优先级；混合 auth/config + 429、仅讨论/测试 429、陈旧 tail、断连/不可写、tmux/未知来源和 Orca 畸形/截断清单全部失败关闭或不发送。
+- 主文档只保留入口与 Hard Fail；manifest、状态机、退出码、错峰、幂等和安全 runbook 放入 `references/20-orca-rate-limit-recovery.md`，并在 Wave Autopilot 中建立按需入口。
+
+### 修复
+
+- 独立审阅后收紧 `tui-idle` 合同：除 `satisfied=true` 外还必须精确为 `status=running` 且 `exitCode=null`；缺字段、已退出和非 running 均失败关闭。额度证据改为尾部锚定的实际错误行，说明句 `expected response` / `provider returns` 不再触发。
+- 自然语言额度错误模板统一要求行首锚定；`Design note: quota exceeded...`、`The account hit your limit...` 等解释性句子即使包含额度短语也不再 actionable，优先接受漏报而不是误唤醒。
+- Orca 已接受唤醒且后置 identity 复核成功、但 `sent` 状态提交失败时，回执明确标记 `WAKE_ACCEPTED_STATE_COMMIT_FAILED`，磁盘上的 WAL intent 继续阻止同 episode 重发。
+
+### 验证
+
+- 新增 fake-Orca 确定性矩阵，覆盖 dry-run 零发送、retrying/RUNNING 不发送、idle 只执行一次、新 evidence 可再处置、分组顺序与最小间隔、auth/config 混合、源码/测试日志讨论 429、断连/不可写/陈旧证据、截断/畸形/失败 Orca、tmux 来源与参数拒绝、敏感原文不出回执、identity 漂移、send/post-check 不确定后的 intent 幂等、状态 symlink/权限与锁竞争。
+- fake-Orca 16/16、`pm-quota-stall` 39/39、`night-watch` 31/31 通过；全部 Shell `bash -n`、Python `py_compile`、Skill quick validation 与 Git whitespace 检查通过。真实 Orca 1.4.197 只读 smoke 验证 list/show/read/wait schema、`UNKNOWN/no_actionable_quota_evidence`、零 send 且不创建 state。
+- Skill Lint security scan 为 0 critical / 0 high；本轮新增生产脚本只有已披露且 `shell=False`/参数数组调用的 subprocess medium，以及工具定位/私有状态路径所需的环境变量 low。Harness failure audit 未在本轮新增文件命中，仍保留全 Skill 既有 6 个 hard finding，不以命令变形规避。
+
+### 待办事项
+
+- 真实 GLM/MiniMax 429、真实 Orca 多项目批量 `WAKE_ACCEPTED → cursor 前进 → 业务进展`、Task-064 的真实 provider quota→available E2E 均为 `NOT_VERIFIED`；本版本不实现 lane availability probe、自动切 provider、tmux、长期守护或 L3 scheduler。
+
+## [2.16.5] - 2026-09-05
+
+### 文档完善
+
+- 合并编排指南中两条重复的自动清理说明，明确 `pm-closeout.sh → pm-cleanup-worker.sh` 是持有完整交付绑定的标准路径；`post-merge-cleanup.sh` 仅用于已经合并但未走标准 closeout 的单一遗留 worker，不替代标准路径也不用于批量扫描。
+
+## [2.16.4] - 2026-09-05
+
+### 改进
+
+- 移除 `multi-agent-orchestration` 主文档、法律场景 reference 和历史记录中对其他任务协调 Skill 的名称与职责跳转；任务来源只表述为“由项目既有任务源确定”，本 Skill 独立聚焦本地 Worker 执行编排。
+
+## [2.16.3] - 2026-09-05
+
+### 改进
+
+- **主文档按运行阶段收敛**：`SKILL.md` 从候选版 579 行压缩为 208 行，只保留触发边界、模式选择、门禁顺序、最短执行闭环与 Hard Fail；详细派发/交付/review/修复合同迁入 `references/18-dispatch-acceptance-contracts.md`，维护者模块边界与完整回归迁入 `references/19-maintainer-validation.md`。
+- **按需加载地图**：将 Orca、Autopilot、backend、验收合同和维护测试映射到明确 reference，避免一个会话默认加载全部历史事故、操作参数和测试矩阵；现有脚本合同、门禁顺序与安全语义不变。
+
+### 技术优化
+
+- `test-dependency-install-guard.sh` 使用临时的禁用额度路由配置，隔离开发者本地 `orchestration-personal.json` 与过期 quota summary，确保 spawn 集成断言检验安装/Shell 门禁本身，而不是被更早的个人配额预检污染。
+
+### 文档完善
+
+- 同步指向 `git-workflow` 的分支生命周期权威文档，明确编排层只负责触发 delivery-bound 清理，Git 层负责一次性/长期分支判定、批量 stale 审计和长期功能线关闭。
+
+### 验证
+
+- 两个 Skill 的 quick validation 与 Git `diff --check` 通过；安全扫描为 0 critical / 0 high；cleanup 37/37、closeout 120/120、dependency guard 67/67、spawn flags 30/30、metadata 21/21 通过。
+- Harness Failure Audit 继续保留 5 个既有 hard finding（受精确交付证据约束的远端分支删除通用命中 1 个、旧测试退出码模式 4 个）；Instruction Stability 因缺正式约束追踪合同与签名多轮证据保持 `NOT_VERIFIED`。真实 GitHub/Orca 外部链路继续沿用 v2.16.1 的 `NOT_VERIFIED` 边界，不因文档重构扩大结论。
+
+## [2.16.2] - 2026-09-05
+
+### 修复
+
+- **长期分支误清理保护**：派发新增 `--branch-lifecycle ephemeral-worker|long-lived`，并把生命周期与 `base_ref` 持久化到 Session `METADATA.json`。清理优先读取元数据，调用方不得把 `long-lived` 降级为一次性分支；长期源分支固定保留远端 ref、本地 ref 与 Worktree。
+- **合并目标与 Worker head 分离**：`pm-cleanup-worker.sh` 新增 `--integration-target`，要求 GitHub PR `baseRefName` 精确匹配。短 Worker 合入长期功能/集成分支时只删除 Worker head，integration target 永不成为本次清理对象；本地集成交付证明也改查实际远端目标，不再写死 `origin/main`。
+
+### 技术优化
+
+- `test-pm-cleanup-worker.sh` 从 23 扩至 37 项，新增 PR base 错配、保护性升级、长期目标保留、长期源分支三类 Git 资源全保留及生命周期防降级回归；spawn flags 30/30、metadata 21/21、pm-closeout 120/120 全绿。
+
+### 待办事项
+
+- 真实 GitHub 仓库中“短 Worker PR → 长期集成分支 → 自动清理 Worker head”的外部链路仍为 `NOT_VERIFIED`；当前证据来自 fake-gh 与真实临时 Git 仓。
+- Skill Lint 安全扫描为 0 critical / 0 high；Harness 静态审查仍因受精确交付证据约束的 `git push --delete` 报通用 `HFA-011`，并命中 4 个本轮未改旧测试的 `HRA-001`，因此不声明全 Skill Harness 已验证，也不以命令变形规避扫描。候选缺少正式约束追踪合同与签名多轮证据，Instruction Stability 继续为 `NOT_VERIFIED`。
+
+## [2.16.1] - 2026-09-05
+
+### 新增
+
+- **验收后自动清理**：新增 `pm-cleanup-worker.sh`，`pm-closeout.sh` 的 `remote-pr` / `local-after-pr` 成功路径默认以冻结 PR/head/tip、delivery commit、worktree 和 Session identity 调用执行；`--keep-branch` 作为显式保留例外。
+- **资源终态合同**：统一输出 `CLEANED`、`RETAINED_WITH_REASON`、`CLEANUP_PENDING`。交付 commit 与清理债务分开记账，清理失败不盲重试 merge/push，但不能被静默隐藏为“完全完成”。
+
+### 修复
+
+- **只读 `sed` 被误拦**：Shell fail-closed 门禁补入受限数字范围读取 `sed -n '<range>p' <单文件>`；写入 `w`、执行 `e`、替换、多文件及其他形式仍需精确 allowlist。该报错属于 spawn 授权策略遗漏，不是系统文件权限不足。
+- **squash 分支可删性**：远端分支先核 exact tip 与 PR/delivery 事实；worktree 安全移除后，本地分支以 expected tip 为 old-value 精确删 ref，不依赖 `git branch -d` 的可达性，也不使用无条件 `git branch -D`。
+
+### 技术优化
+
+- 新增 `test-pm-cleanup-worker.sh` 23 项，覆盖 dirty/非法 metadata/远端查询失败/PR-head mismatch/未知 PR 状态/dry-run/merged 全清理/open PR 保留远端等路径；dependency guard 67/67 覆盖受限 `sed` 正负例；`test-pm-closeout.sh` 120/120，含默认 cleanup 参数与回执集成断言。
+
+### 待办事项
+
+- 真实 GitHub 仓库的 delivery → 远端分支 → Orca lifecycle/worktree → 本地 ref 全链自动清理仍为 `NOT_VERIFIED`；本次结论只覆盖 throwaway Git 与 fake-gh 确定性证据。
+- 全量回归未形成全绿回执：既有 `codex → zcode` policy 与“zcode 默认禁用”的正文/测试冲突；真实 Orca smoke 在 terminal send 失败（其创建的两个精确 terminal 已关闭）。Instruction Stability 仍为 `NOT_VERIFIED`；Skill Lint 对本功能受 exact tip/PR/delivery 约束的远端删除仍给出通用 `HFA-011`，未用命令变形规避扫描。
+
+## [2.16.0] - 2026-09-05
+
+### 新增（post-merge cleanup gate，合并后即时清理）
+
+- **职责单一的 `scripts/post-merge-cleanup.sh`**：PR 确认合并后当场回收一个 worker 分支的 worktree/本地/远端短分支。删除资格真值来自 git-workflow 分支清理规则，全部门禁机械判定、fail-closed：① 分支不是 `main/master/develop`、`--base` 或 `--protected-branch`（名称或 glob，长期集成分支）匹配项；② 存在唯一 `state == MERGED` 的 PR 且其 `headRefOid` 与本地分支 tip 精确一致——squash/rebase merge 的唯一权威证据，head 漂移视为身份不明；③ 无开放 stacked child PR 以该分支为 base（gh 查询失败也拒绝）；④ worktree 无未提交改动；⑤ session 生命周期可证结算——tmux 存活且无 supervised dispatch、terminal accounting 为 active/reclaimable/release_pending/release_unknown/unknown 一律拒绝；⑥ 远端状态必须 `ls-remote` 可验证。门禁不过输出 `POST_MERGE_CLEANUP_DEFERRED: reason=...`（exit 2）保留现场。
+- **生命周期顺序执行**：execute 时先经 `clean-worktree.sh --execute --delete-branch`（worker-release → 关 terminal/lease → 删 worktree → 删本地分支），再 `git push origin --delete` 远端短分支（push 报错但 follow-up `ls-remote` 证明远端已删时按并发竞态幂等放行），最后机械零残留验证（本地 ref、worktree 注册与目录、tmux session、远端 ref）；远端删除失败或任一残留以 exit 9 报告，绝不把部分成功冒充完成。执行前复核分支 tip 未移动（TOCTOU）。默认 dry-run 零副作用；即时清理是「已合并且无消费者」对 <24h 规则的显式例外，只处理显式传入的单个分支，不批量扫描。
+- **`clean-worktree.sh` 新增 `--force-delete-branch`**：squash/rebase merge 后分支 tip 不可达 main，安全 `git branch -d` 必拒；该开关允许在 `-d` 拒绝后升级 `-D`，仅供持有独立 MERGED+head 证据的调用方（即 post-merge-cleanup.sh 门禁通过后）使用，不带开关时行为不变（拒绝并 exit 2，不再依赖 set -e 的裸失败）。
+- **文档同步**：SKILL.md §8 新增 post-merge-cleanup 段并纳入验收测试清单与 `gh` 依赖说明；`references/14-pm-orchestrate.md` §4.4 的「自动清理属于 Task-103」占位替换为实际工具指引。版本 2.15.1 → 2.16.0。
+
+## [2.15.1] - 2026-09-04
+
+### 修复（reauthorize 已结算 task 的 TASK_REUSED 误判，Task-113）
+
+- **有界区分真单活与结算残留**：worker_done outcome=failed 正常结算（task 翻成 failed、Dispatch settled、Delivery release+ack）后跑 `pm-orchestrate reauthorize`，预检打印 task state=failed，但新 terminal 注册返回 `TASK_REUSED`；旧实现（Task-081）把 TASK_REUSED 固定解释为「task 仍 dispatched（单活 fencing）」，回滚新终端并指引 PM「先 settle 再重跑」——task 早已结算，恢复链死循环。现注册返回 TASK_REUSED 时按 Step 0 预检状态三分：`failed/settled`（结算残留）先复核一次 task-list，确认仍是 failed/settled 才 `task-update ready` 并只重试一次注册，成功后照常改路由/关旧终端；`dispatched` 维持原单活 fencing 回滚 + runbook #18 指引零变化；`unknown`/其他状态与「预检 failed/settled → 复核翻回 dispatched」的漂移一律回滚新终端 fail-closed 不复位。身份、coordinator 绑定、terminal ownership、Delivery/settlement、provider lease 与 scope guard 全部未放宽；新终端建立后任何中间失败仍先关新终端、保留旧终端（重复调用不累积终端）。
+- **回归门禁扩容**：`test-pm-reauthorize.sh` 9 案例 71 断言 → 14 案例 95 断言。新增 J（failed+settled+TASK_REUSED 复核一致 → 复位重试恢复、零终端泄漏）、J2（settled 状态字串同链路）、K（复位后重试仍 TASK_REUSED → 有界单次重试 + 回滚）、L（预检 failed → 复核翻回 dispatched 漂移 → fail-closed 不复位）、M（unknown + TASK_REUSED → 不猜测不复位）、N（结算恢复链重复调用不累积终端）。fake CLI 新增 `task_reused_once` 模式（仅当 task-update 复位后才放行重试，保证验证「复位 → 重试」因果链）与 `task-status-next` 一次性状态轮换（漂移注入）。红→绿实测：修复前 71 通过 / 24 失败（全部落在 J/J2/K/L/N），修复后 95/95 全绿；`test-pm-orchestrate-handoff.sh` 31/31、`bash -n pm-orchestrate.sh` 通过。
+- **文档同步**：`SKILL.md` §4.5 reauthorize 段新增结算残留语义说明。版本 2.15.0 → 2.15.1。
+
 ## [2.15.0] - 2026-09-04
 
 ### 新增
@@ -1381,14 +1633,14 @@ v1.18.2 文档化了 "acceptEdits -y 仍弹 dialog" 但**未改默认行为**，
 ## [1.8.1] - 2026-05-20
 
 ### Changed
-- 同步相关 Skill 引用：`cross-agent-collab` 更名为 `cross-agent-coordination` 后，更新任务协调层边界说明和参考文档。
+- 同步任务协调层边界说明和参考文档，保持本 Skill 聚焦本地执行编排。
 
 ## [1.8.0] - 2026-05-20
 
 ### Changed
 - 重命名 Skill：`multi-agent-workflow` → `multi-agent-orchestration`，标题改为 Multi-Agent Orchestration，以突出“本地多 Agent 执行编排”而非普通流程说明。
 - 同步更新 SKILL.md description 和开篇说明，统一使用“执行编排”表述。
-- 同步更新 `cross-agent-coordination` 中对本 Skill 的边界引用。
+- 同步更新相关任务协调边界引用。
 
 ## [1.7.0] - 2026-05-20
 
@@ -1396,7 +1648,7 @@ v1.18.2 文档化了 "acceptEdits -y 仍弹 dialog" 但**未改默认行为**，
 - 重命名 Skill：`parallel-agent-workflow` → `multi-agent-workflow`，标题改为 Multi-Agent Workflow，以匹配当前“多 Agent 本地执行编排”的职责边界。
 - 优化 SKILL.md frontmatter description，补充正向触发场景和负向边界。
 - 补充脚本依赖说明，明确 `pm-monitor.sh` 与 `terminal-split.sh` 的系统依赖和可选终端依赖。
-- 同步更新 `cross-agent-coordination` 中对本 Skill 的边界引用。
+- 同步更新相关任务协调边界引用。
 
 ## [1.6.0] - 2026-05-19
 
@@ -1420,7 +1672,7 @@ v1.18.2 文档化了 "acceptEdits -y 仍弹 dialog" 但**未改默认行为**，
 
 ### Changed
 - 明确本 Skill 只负责本地 Agent 会话、并行执行、PM 巡检和 worktree 隔离，不拥有任务主状态。
-- 标准流程改为从项目任务源接任务；任务读取、外部 Agent 邮件触发和跨平台归属交给 `cross-agent-coordination`。
+- 标准流程改为从项目任务源接任务；任务读取、外部 Agent 邮件触发和跨平台归属遵循项目既有规则。
 - 将 `git-task-orchestrator` 定位改为历史蓝图，不再作为当前协作入口，也不迁入其旧 worktree/session 方案。
 
 ## [1.3.0] - 2026-05-09

@@ -66,12 +66,13 @@ Context:
 - API Provider: {{api_provider}}
 - Model: {{model_name}}
 - Provider Slot: {{provider_slot}}
-- Worker Type: {{worker_type_ui_wiring_contract_extension_tauri_command_docs_research_custom}}
+- Worker Type: {{worker_type_ui_wiring_contract_extension_tauri_command_python_nested_merge_review_custom}}
 - Effort: {{effort_low_medium_high}}
 - Install Guard Mode: {{install_guard_mode_hook_or_prompt_only_degraded}}
 - Install Authorization Source: {{install_authorization_source_or_none}}
 - Authorized Install Commands: {{exact_authorized_install_commands_or_none}}
 - Allowed Shell Commands: {{exact_allowed_shell_commands_from_spawn_metadata}}
+- Verification Authority: {{verification_source_and_required_from_spawn_metadata}}
 - PM Authority Receipt: {{git_common_dir_authority_receipt_path}}
 - Runtime Hook Attestation: {{git_common_dir_hook_attestation_path_or_none_yet}}
 - Identity-Bound Safe Push Command: {{exact_safe_push_command_or_none}}
@@ -110,10 +111,10 @@ Execution Authority:
 - Verification is not authorization to install dependencies or mutate the machine environment.
 - Machine/global installs and project-local dependency installs are denied by default, including package-manager, system-package-manager and global-link commands.
 - Only exact commands listed in `Authorized Install Commands` may run, and only when `Install Authorization Source` records an explicit user/project approval. Do not edit the authorization file or widen an authorized command.
-- Shell is also fail-closed: use only the narrow built-in lifecycle commands or the exact `Allowed Shell Commands` emitted by spawn. `--verify-cmd` grants execution authority only after install-like commands such as `npx`/`npm exec`/`pnpm dlx` are rejected.
-- Default verify commands (`npm run typecheck/lint/test/build` for whichever exist in `package.json`) are auto-injected into `Allowed Shell Commands` when PM did not pass `--verify-cmd`; run them directly to self-verify before commit. Node worktrees outside the main repo tree (Orca `~/orca/workspaces/`) also get a `node_modules` symlink to the main checkout, so `npm run` resolves without `npm install`. If `node_modules` is still missing (e.g. Python project, or main checkout has none), set `status=blocked` per the rule below — do not install it yourself.
+- Shell is also fail-closed, evaluated per segment: pipelines and `;`/`&&` chains are allowed only when every segment is a built-in safe read/delivery command (git status/diff/log/show/fetch/add/commit/push/rebase, gh pr create/view, ls/grep/cat/jq/sort and similar filters) or the exact `Allowed Shell Commands` emitted by spawn. Redirects are limited to `/dev/null` and temporary directories; subshells, input redirects and command substitution are denied. The built-in `sed` exception is deliberately narrow: only `sed -n '<numeric-range>p' <single-file>` is read-only; substitutions, `w`/`e`, multi-file and other forms still require an exact allowlist entry. `--verify-cmd` grants execution authority only after install-like commands such as `npx`/`npm exec`/`pnpm dlx` are rejected.
+- Run `verification.commands[]` from METADATA exactly as stored. Spawn resolves those commands from direct `--verify-cmd`, a pinned dispatch contract task, the selected project verification profile, or bounded root Node/Make/Python discovery; compound nested-project commands remain one exact string. Node worktrees outside the main repo tree (Orca `~/orca/workspaces/`) may receive a `node_modules` symlink to the main checkout. If a required runtime is still missing, set `status=blocked` per the rule below — do not install it yourself.
 - The authorization JSON inside the worktree is a worker-readable mirror, not the authority source. The PM receipt under Git common-dir and the process snapshot are authoritative. Initial metadata proves settings wiring only; after your first Shell/File tool call, PM must see the runtime attestation file before treating the hook as runtime-proven. Do not edit the receipt, attestation or hook settings.
-- Raw `git push` is denied. If an identity-bound safe-push command is listed, copy it exactly: it checks every commit from the remote PR base through current HEAD, then pushes only the verified immutable OID. If none is listed, report push as blocked instead of bypassing the gate.
+- Push policy (v2.22.0): pushing your own worker branch is allowed by default — `git push -u origin HEAD` or `git push origin <branch>` are safe-class commands. Force push (`--force`/`-f`/`--force-with-lease`), pushing to `main`/`master`, remote-ref deletion (`git push origin :branch`) and `--mirror`/`--tags` remain denied. If an identity-bound safe-push command is listed above, prefer it: it verifies every commit from the remote PR base through current HEAD, then pushes only the verified immutable OID. After pushing, open the PR with `gh pr create` (also safe-class).
 - A normal lockfile-based project install is allowed only when its exact command is listed above; this avoids treating an expected project dependency flow as an implicit machine-wide authorization.
 - If a required tool is missing, first locate an existing binary or supported project-local runtime. If still unavailable, set `status=blocked`, record the missing dependency and skipped verification in RESULT, and stop. Do not install it yourself.
 
@@ -170,7 +171,8 @@ Verification:
 - {{verify_command_3}}
 
 Verification Floor:
-- For frontend/UI workers, run typecheck, tests, and build unless PM explicitly narrows verification.
+- For frontend/UI workers, run typecheck, tests, and build unless PM explicitly narrows verification. Interpret this floor as scoped-first: prefer single-spec / targeted-case runs (`--bail 1` early stop) over whole-suite runs for self-verification.
+- Verification load discipline: a full-suite run is machine-exclusive. Before starting one, probe for an in-flight full-suite test process (e.g. `pgrep -fl 'vitest|pytest|jest|go test'`); if you cannot confirm exclusivity, back off, wait, or keep verification scoped and defer the full run to PM closeout. Redirect long verification output to a log file and paste only a bounded tail (e.g. `tail -50`) into the terminal/session — unbounded streamed output has OOM'd the host runtime before.
 - For Tauri/Rust workers, run `cargo check --manifest-path src-tauri/Cargo.toml --offline` as the required Rust floor; run `cargo build` only when local native dependencies are available.
 - Record every skipped command with the exact reason in RESULT.md.
 

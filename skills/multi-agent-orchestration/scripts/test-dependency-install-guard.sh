@@ -9,6 +9,13 @@ fail=0
 tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/dependency-install-guard.XXXXXX")
 trap 'rm -rf "$tmp_root"' EXIT
 
+# 隔离安装门禁测试与开发者本地的额度路由配置。否则真实
+# orchestration-personal.json 的过期 summary 会让 quota preflight 在被测
+# install/shell guard 之前拒绝 spawn，导致测试结果随运行机器漂移。
+test_personal_config="$tmp_root/orchestration-personal.json"
+printf '%s\n' '{"quota_aware_routing":{"enabled":false}}' > "$test_personal_config"
+export MULTI_AGENT_ORCHESTRATION_PERSONAL_CONFIG="$test_personal_config"
+
 ok() {
   printf 'PASS: %s\n' "$1"
   pass=$((pass + 1))
@@ -36,7 +43,11 @@ with open(path, "w", encoding="utf-8") as fh:
         "policy": "deny_by_default",
         "authorization_source": source,
         "authorized_commands": commands,
-        "allowed_shell_commands": ["npm test", "rg -n 'brew install' references/"],
+        "allowed_shell_commands": [
+            "npm test",
+            "rg -n 'brew install' references/",
+            "cd 律师IP/motion-composer && python3 -m unittest discover -s tests -v",
+        ],
     }, fh, ensure_ascii=False)
 PY
 }
@@ -165,6 +176,10 @@ fi
 
 expect_allow "benign verification command is not blocked" \
   hook "$deny_auth" "npm test"
+expect_allow "exact nested Python verification command is allowed as one string" \
+  hook "$deny_auth" "cd 律师IP/motion-composer && python3 -m unittest discover -s tests -v"
+expect_block "nested Python authority does not generalize to another command" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "cd 律师IP/motion-composer && python3 -m unittest discover -s tests"
 expect_allow "searching documentation text is not mistaken for install" \
   hook "$deny_auth" "rg -n 'brew install' references/"
 expect_block "variable indirection is blocked by exact Shell allowlist" "SHELL_COMMAND_NOT_ALLOWLISTED" \
@@ -187,10 +202,100 @@ expect_block "rg preprocessor escape is denied" "DEPENDENCY_INSTALL_BLOCKED" \
   hook "$deny_auth" "rg --pre 'sh -c brew install shellcheck' pattern"
 expect_block "git commit no-verify is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
   hook "$deny_auth" "git commit --no-verify -m bypass"
-expect_block "raw git push is denied in favor of identity-bound safe-push" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+expect_block "force push is denied even under widened default" "SHELL_COMMAND_NOT_ALLOWLISTED" \
   hook "$deny_auth" "git push --force origin HEAD"
 expect_allow "normal git lifecycle command remains available" \
   hook "$deny_auth" "git diff --check"
+
+# v2.22.0 worker 默认权限放大（用户决策 2026-09-06）：worker 被隔离在专属分支
+# worktree 内，push+PR 是必要交付路径。safe 类从「裸命令白名单」升级为「分段校验」：
+# 每段必须是安全读或安全交付命令；force/主干/远端删除仍 fail-closed。
+expect_allow "plain git push of tracked branch is allowed by default" \
+  hook "$deny_auth" "git push"
+expect_allow "git push -u origin HEAD is allowed" \
+  hook "$deny_auth" "git push -u origin HEAD"
+expect_allow "git push origin feature branch is allowed" \
+  hook "$deny_auth" "git push origin chore-issue-templates"
+expect_allow "git push refspec to feature branch is allowed" \
+  hook "$deny_auth" "git push origin HEAD:chore-issue-templates"
+expect_block "git push --force-with-lease is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git push --force-with-lease origin HEAD"
+expect_block "git push to main is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git push origin HEAD:main"
+expect_block "git push bare main is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git push origin main"
+expect_block "git push deleting remote ref is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git push origin :feat/x"
+expect_block "git push --mirror is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git push --mirror origin"
+expect_block "git push --tags is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git push --tags origin"
+expect_allow "compound read pipeline with && is allowed" \
+  hook "$deny_auth" "git status && git log --oneline -5 && git branch --show-current"
+expect_allow "piped read pipeline is allowed" \
+  hook "$deny_auth" "git log --oneline -8 | head -5"
+expect_allow "grep pipeline with head is allowed" \
+  hook "$deny_auth" 'grep -rn "extractDocxParts" src | head -20'
+expect_allow "semicolon separated reads with stderr muted are allowed" \
+  hook "$deny_auth" 'ls .github 2>/dev/null; ls .github/ISSUE_TEMPLATE'
+expect_allow "output redirect to /tmp is allowed" \
+  hook "$deny_auth" "git diff > /tmp/worker-diff.patch"
+expect_block "output redirect to project file is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git diff > src/index.ts"
+expect_block "input redirect is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git log < commit-list.txt"
+expect_block "compound with install segment is denied as install" "DEPENDENCY_INSTALL_BLOCKED" \
+  hook "$deny_auth" "git status && brew install jq"
+expect_block "compound with unlisted program segment is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git status && node server.js"
+expect_allow "version-only queries are allowed" \
+  hook "$deny_auth" "node --version"
+expect_allow "command -v lookups are allowed" \
+  hook "$deny_auth" "command -v node pnpm"
+expect_allow "type lookup is allowed" \
+  hook "$deny_auth" "type pnpm"
+expect_allow "git remote -v is allowed" \
+  hook "$deny_auth" "git remote -v"
+expect_allow "git branch listing flags are allowed" \
+  hook "$deny_auth" "git branch -av"
+expect_block "git branch delete is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git branch -D feat/x"
+expect_allow "git rebase onto integration base is allowed" \
+  hook "$deny_auth" "git rebase origin/main"
+expect_allow "git fetch then rebase chain is allowed" \
+  hook "$deny_auth" "git fetch origin && git rebase origin/main"
+expect_allow "gh auth status is allowed" \
+  hook "$deny_auth" "gh auth status"
+expect_allow "gh repo view is allowed" \
+  hook "$deny_auth" "gh repo view --json defaultBranchRef"
+expect_block "gh api remains exact-authority only" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "gh api repos/cat-xierluo/dsh-contract-copilot --jq .default_branch"
+expect_block "gh repo sync remains denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "gh repo sync"
+expect_allow "jq read of metadata file is allowed" \
+  hook "$deny_auth" "jq -r .policy .claude/agent-sessions/w/INSTALL_AUTHORIZATION.json"
+expect_allow "filter chain sort uniq cut tr is allowed" \
+  hook "$deny_auth" "git log --format=%s | sort | uniq -c | sort -rn | head -10"
+expect_block "xargs escape from read pipeline is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "grep -rl TODO src | xargs rm"
+expect_allow "full delivery chain add commit push is allowed" \
+  hook "$deny_auth" "git add .github && git commit -m 'chore(governance): issue templates' && git push -u origin HEAD"
+expect_block "env-prefixed command stays exact-authority only" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/.bin/vitest run tests/x.spec.ts"
+expect_block "subshell grouping is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "(git status)"
+expect_block "tmp redirect path traversal is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git diff > /tmp/../etc/worker-escape"
+expect_block "git fetch upload-pack escape is denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "git fetch --upload-pack='touch /tmp/x' file:///repo"
+expect_allow "bounded read-only sed range remains available" \
+  hook "$deny_auth" "sed -n '180,340p' tests/browser/ux\\_workbench\\_contract\\_browser\\_test.js"
+expect_block "sed write command remains denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "sed -n '1,20w /tmp/worker-copy' src/app.ts"
+expect_block "sed execute command remains denied" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "sed -n '1e id' src/app.ts"
+expect_block "unbounded sed program remains exact-authority only" "SHELL_COMMAND_NOT_ALLOWLISTED" \
+  hook "$deny_auth" "sed 's/old/new/' src/app.ts"
 
 expect_allow "Dispatch-scoped worker_done is allowed" \
   hook "$deny_auth" 'orca orchestration send --type worker_done --subject "done" --body "implemented and verified" --task-id task_123 --dispatch-id ctx_456 --outcome succeeded --files-modified "src/a.ts" --json'
@@ -200,6 +305,8 @@ expect_allow "bounded worker ask is allowed" \
   hook "$deny_auth" 'orca orchestration ask --question "choose A or B" --options "A,B" --timeout-ms 600000 --json'
 expect_allow "read-only worker check is allowed" \
   hook "$deny_auth" 'orca-ide orchestration check --peek --types "status,dispatch" --json'
+expect_allow "worker check by preamble terminal handle is allowed" \
+  hook "$deny_auth" 'orca orchestration check --terminal term_8cfbab5c-e451-416b-aace-a94fcefb39df'
 expect_block "worker protocol cannot target a group" "SHELL_COMMAND_NOT_ALLOWLISTED" \
   hook "$deny_auth" 'orca orchestration send --type heartbeat --subject "alive" --task-id task_123 --dispatch-id ctx_456 --to @all --json'
 expect_block "worker_done requires explicit outcome" "SHELL_COMMAND_NOT_ALLOWLISTED" \
@@ -256,6 +363,71 @@ git -C "$spawn_repo" add base.txt
 GIT_AUTHOR_NAME=Base GIT_AUTHOR_EMAIL=base@example.invalid \
 GIT_COMMITTER_NAME=Base GIT_COMMITTER_EMAIL=base@example.invalid \
   git -C "$spawn_repo" commit -m base >/dev/null
+
+required_empty_branch="feat/required-empty"
+required_empty_worktree="$spawn_repo/.claude/worktrees/tmux-feat-required-empty"
+fake_orca_log="$tmp_root/required-empty-orca.log"
+printf '%s\n' '#!/usr/bin/env bash' \
+  "printf '%s\\n' \"\$*\" >> '$fake_orca_log'" \
+  'printf '\''{"ok":false,"error":{"code":"unexpected_call"}}\n'\''' > "$tmp_root/orca"
+chmod +x "$tmp_root/orca"
+if ORCA_CLI_COMMAND="$tmp_root/orca" bash "$SCRIPT_DIR/spawn-worker.sh" \
+  --project "$spawn_repo" --branch "$required_empty_branch" --session "$session-required-empty" \
+  --worker-backend claude-code --command "$tmp_root/claude 30" \
+  --require-verification \
+  >"$tmp_root/required-empty.out" 2>&1; then
+  not_ok "required empty verification fails before worker side effects"
+else
+  if grep -qF "self-verification is required but no command resolved" "$tmp_root/required-empty.out" \
+    && [ ! -e "$required_empty_worktree" ] \
+    && ! git -C "$spawn_repo" show-ref --verify --quiet "refs/heads/$required_empty_branch" \
+    && ! grep -Eq 'worktree create|terminal create|task-create|worker-start|dispatch-' "$fake_orca_log" 2>/dev/null; then
+    ok "required empty verification fails before worktree/branch and Orca terminal/Task/Dispatch side effects"
+  else
+    cat "$tmp_root/required-empty.out" >&2 || true
+    printf 'required-empty diagnostics: worktree=%s branch_ref=%s orca_log=%s\n' \
+      "$([ -e "$required_empty_worktree" ] && echo present || echo absent)" \
+      "$(git -C "$spawn_repo" show-ref --verify --quiet "refs/heads/$required_empty_branch" && echo present || echo absent)" \
+      "$([ -e "$fake_orca_log" ] && { tr '\n' ' ' < "$fake_orca_log"; } || echo absent)" >&2
+    not_ok "required empty verification fails before worktree/branch and Orca terminal/Task/Dispatch side effects"
+  fi
+fi
+
+nul_project_config="$tmp_root/nul-project-config.json"
+nul_dispatch_contract="$tmp_root/nul-dispatch-contract.json"
+python3 - "$nul_project_config" "$nul_dispatch_contract" <<'PY'
+import json, sys
+with open(sys.argv[1], "w", encoding="utf-8") as stream:
+    json.dump({"schema":"multi-agent-orchestration.project-config.v1","verification":{"required":True,"default":["pwd\u0000git status --short"],"by_worker_type":{}}}, stream)
+task = {"task_id":"NUL-TASK","status":"READY","kind":"bugfix","value_kind":"implementation","value_identity":"nul-task","problem_target":"reject NUL authority","consumer":"current test","decision_or_gate_changed":"no split authority","engineering_assets":["src/example.py"],"doc_assets":[],"verification_commands":["pwd\u0000git status --short"],"worker_pr_policy":"worker_pr","consume_by":"current test","expiry":"archive after test","observable_acceptance":"spawn rejects before mutation","starts_external_resources":False,"resource_owner":"none","state_transition":""}
+with open(sys.argv[2], "w", encoding="utf-8") as stream:
+    json.dump({"schema_version":"dispatch-value-gate.v2","mode":"converge","pending_acceptance_prs":0,"explore_authorized_by":"","explore_expires_at":"","tasks":[task]}, stream)
+PY
+for nul_source in project contract; do
+  nul_branch="feat/nul-$nul_source"
+  nul_worktree="$spawn_repo/.claude/worktrees/tmux-feat-nul-$nul_source"
+  : > "$fake_orca_log"
+  nul_args=(--project "$spawn_repo" --branch "$nul_branch" --session "$session-nul-$nul_source"
+    --worker-backend claude-code --command "$tmp_root/claude 30" --require-verification)
+  if [ "$nul_source" = project ]; then
+    nul_args+=(--project-config "$nul_project_config")
+  else
+    nul_args+=(--verification-contract "$nul_dispatch_contract" --verification-task-id NUL-TASK)
+  fi
+  if ORCA_CLI_COMMAND="$tmp_root/orca" bash "$SCRIPT_DIR/spawn-worker.sh" "${nul_args[@]}" \
+    >"$tmp_root/nul-$nul_source.out" 2>&1; then
+    not_ok "$nul_source U+0000 verification authority fails before side effects"
+  elif grep -qF "must not contain U+0000" "$tmp_root/nul-$nul_source.out" \
+    && [ ! -e "$nul_worktree" ] \
+    && ! git -C "$spawn_repo" show-ref --verify --quiet "refs/heads/$nul_branch" \
+    && ! grep -Eq 'worktree create|terminal create|task-create|worker-start|dispatch-' "$fake_orca_log"; then
+    ok "$nul_source U+0000 verification authority fails before worktree/Orca mutation"
+  else
+    cat "$tmp_root/nul-$nul_source.out" >&2 || true
+    not_ok "$nul_source U+0000 verification authority fails before worktree/Orca mutation"
+  fi
+done
+
 worktree="$spawn_repo/.claude/worktrees/tmux-feat-install-guard-test"
 git -C "$spawn_repo" worktree add "$worktree" -b feat/install-guard-test main >/dev/null
 mkdir -p "$worktree/.claude"
@@ -281,6 +453,8 @@ if bash "$SCRIPT_DIR/spawn-worker.sh" \
   --session "$session" \
   --worker-backend claude-code \
   --command "$tmp_root/claude 30" \
+  --verify-cmd "cd 律师IP/motion-composer && python3 -m unittest discover -s tests -v" \
+  --require-verification \
   --allow-install-command "npm ci" \
   --install-authorization-source "项目锁文件验证流程明确授权" \
   --git-expected-name "Test" \
@@ -309,21 +483,36 @@ if bash "$SCRIPT_DIR/spawn-worker.sh" \
   else
     not_ok "spawn writes real session context at asserted worktree paths"
   fi
-  if jq -e '.policy == "deny_by_default" and .authorization_source != "" and (.authorized_commands == ["npm ci"]) and (.allowed_shell_commands | index("pwd") != null)' "$auth_file" >/dev/null; then
-    ok "spawn writes auditable exact-command authorization"
+  if jq -e --arg verify "cd 律师IP/motion-composer && python3 -m unittest discover -s tests -v" '
+      .policy == "deny_by_default"
+      and .authorization_source != ""
+      and (.authorized_commands == ["npm ci"])
+      and (.allowed_shell_commands | index("pwd") != null)
+      and (.allowed_shell_commands | index($verify) != null)
+      and .verification == {required:true,source:"cli:--verify-cmd",commands:[$verify]}
+    ' "$auth_file" >/dev/null; then
+    ok "spawn writes exact verification command into authorization snapshot"
   else
-    not_ok "spawn writes auditable exact-command authorization"
+    not_ok "spawn writes exact verification command into authorization snapshot"
   fi
   if jq -e '.execution_authority.install_guard_mode == "hook" and .execution_authority.environment_mutation_policy == "deny_by_default" and .execution_authority.enforcement_source == "pretool_hook_settings_wired_process_snapshot_runtime_unproven" and .execution_authority.worker_mirror_authoritative == false' "$metadata_file" >/dev/null; then
     ok "spawn records install guard mode in metadata"
   else
     not_ok "spawn records install guard mode in metadata"
   fi
+  if jq -e --arg verify "cd 律师IP/motion-composer && python3 -m unittest discover -s tests -v" '
+      .verification == {required:true,source:"cli:--verify-cmd",commands:[$verify]}
+      and (.execution_authority.allowed_shell_commands | index($verify) != null)
+    ' "$metadata_file" >/dev/null; then
+    ok "metadata preserves verification source, requirement and exact Shell authority"
+  else
+    not_ok "metadata preserves verification source, requirement and exact Shell authority"
+  fi
   if jq -e '
       .execution_authority.git_identity.safe_push_command as $push
       |
       .execution_authority.git_identity.integration_base == "origin/main"
-      and .execution_authority.git_identity.raw_git_push_allowed == false
+      and .execution_authority.git_identity.raw_git_push_allowed == true
       and .execution_authority.git_identity.commit_environment_bound == true
       and ($push | contains("safe-push.sh"))
       and (.execution_authority.allowed_shell_commands | index($push) != null)
@@ -354,10 +543,13 @@ if bash "$SCRIPT_DIR/spawn-worker.sh" \
   receipt_file=$(jq -r '.execution_authority.authority_receipt_file' "$metadata_file" 2>/dev/null || true)
   if [ -f "$receipt_file" ] && [[ "$receipt_file" != "$worktree"/* ]] && \
      jq -e --arg digest "$(jq -r '.execution_authority.authority_receipt_sha256' "$metadata_file")" \
-       '.authorization_sha256 == $digest and .install_guard_mode == "hook"' "$receipt_file" >/dev/null; then
-    ok "spawn writes PM authority receipt outside worker worktree"
+       --arg verify "cd 律师IP/motion-composer && python3 -m unittest discover -s tests -v" \
+       '.authorization_sha256 == $digest and .install_guard_mode == "hook"
+        and .verification == {required:true,source:"cli:--verify-cmd",commands:[$verify]}
+        and (.authorization_snapshot.allowed_shell_commands | index($verify) != null)' "$receipt_file" >/dev/null; then
+    ok "PM receipt preserves exact verification authority outside worker worktree"
   else
-    not_ok "spawn writes PM authority receipt outside worker worktree"
+    not_ok "PM receipt preserves exact verification authority outside worker worktree"
   fi
   attestation_file=$(jq -r '.execution_authority.guard_attestation_file' "$metadata_file" 2>/dev/null || true)
   if [ ! -e "$attestation_file" ]; then

@@ -45,6 +45,7 @@ reset_metadata_case() {
   WORKTREE="/repo/project/.claude/worktrees/worker"
   BRANCH="feat/worker"
   BASE_REF="origin/main"
+  BRANCH_LIFECYCLE="ephemeral-worker"
   BASE_SHA="base-sha"
   SESSION="worker-session"
   SESSION_CONTEXT="$WORKTREE/.claude/agent-sessions/$SESSION"
@@ -74,6 +75,8 @@ reset_metadata_case() {
   LIGHTWEIGHT_MODE=0
   LIGHTWEIGHT_AUTO=0
   VERIFY_COMMANDS=("bash test-a.sh" "bash test-b.sh")
+  VERIFY_COMMAND_SOURCE="dispatch-contract:TASK-A"
+  REQUIRE_VERIFICATION=1
   ADD_DIRS=("/tmp/a" "/tmp/b path")
   ALLOW_PATHS=("skills/a/**" "skills/b/**")
   ROLE="implementer"
@@ -105,6 +108,8 @@ METADATA_FILE="$CASE_ROOT/worktree.json"
 write_metadata > "$CASE_ROOT/worktree.out"
 assert_jq "$METADATA_FILE" '.schema == "multi-agent-orchestration.worktree-metadata.v1" and .project == "/repo/project"' \
   "schema and project identity are preserved"
+assert_jq "$METADATA_FILE" '.branch_lifecycle == "ephemeral-worker" and .base_ref == "origin/main"' \
+  "branch lifecycle and integration target are persisted"
 assert_jq "$METADATA_FILE" '.isolation == {mode:"worktree", lightweight_auto:0}' \
   "worktree isolation is explicit"
 assert_jq "$METADATA_FILE" '.runtime.harness_authority.pm_harness == "codex" and .runtime.harness_authority.allowed_worker_backends == ["claude-code","codex"]' \
@@ -117,6 +122,8 @@ assert_jq "$METADATA_FILE" '.runtime.role == {worker_role:"implementer",review_r
   "role metadata defaults are recorded for scope discipline"
 assert_jq "$METADATA_FILE" '.verification.commands == ["bash test-a.sh","bash test-b.sh"] and .add_dirs[1] == "/tmp/b path" and .allow_paths[0] == "skills/a/**"' \
   "repeatable arrays preserve order and spaces"
+assert_jq "$METADATA_FILE" '.verification.required == true and .verification.source == "dispatch-contract:TASK-A"' \
+  "verification authority source and requirement are auditable"
 assert_jq "$METADATA_FILE" '.execution_authority.allowed_shell_commands | length == 2' \
   "allowed Shell commands remain unique"
 assert_jq "$METADATA_FILE" '.execution_authority.enforcement_source == "pretool_hook_settings_wired_process_snapshot_runtime_unproven" and .execution_authority.worker_mirror_authoritative == false' \
@@ -133,6 +140,7 @@ METADATA_FILE="$CASE_ROOT/lightweight.json"
 SESSION_CONTEXT="/repo/project/.claude/agent-sessions/lightweight"
 LIGHTWEIGHT_MODE=1
 LIGHTWEIGHT_AUTO=1
+BRANCH_LIFECYCLE="long-lived"
 ROLE="reviewer"
 REVIEW_REPAIR_GRANT="task-contract-1"
 INSTALL_GUARD_MODE="prompt_only_degraded"
@@ -153,6 +161,8 @@ ORCA_CAPABILITIES_JSON='[]'
 write_metadata > "$CASE_ROOT/lightweight.out"
 assert_jq "$METADATA_FILE" '.isolation == {mode:"lightweight", lightweight_auto:1}' \
   "lightweight isolation and auto-detection are recorded"
+assert_jq "$METADATA_FILE" '.branch_lifecycle == "long-lived"' \
+  "long-lived lifecycle is recorded verbatim"
 assert_jq "$METADATA_FILE" '.runtime.provider_lease.max_concurrency == null' \
   "unconfigured provider limit remains null"
 assert_jq "$METADATA_FILE" '.runtime.role == {worker_role:"reviewer",review_repair_grant:"task-contract-1"}' \

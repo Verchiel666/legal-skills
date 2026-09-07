@@ -33,6 +33,7 @@ reset_defaults() {
   WORKTREE=""
   SESSION=""
   BASE_REF="main"
+  BRANCH_LIFECYCLE="ephemeral-worker"
   COMMAND=""
   DRY_RUN=0
   WORKER_BACKEND=""
@@ -45,6 +46,12 @@ reset_defaults() {
   WAVE_ID=""
   WAVE_WORKER_ID=""
   VERIFY_COMMANDS=()
+  VERIFY_COMMAND_SOURCE=""
+  REQUIRE_VERIFICATION=0
+  VERIFICATION_CONTRACT=""
+  VERIFICATION_TASK_ID=""
+  PROJECT_CONFIG_FILE=""
+  WORKER_TYPE=""
   WITH_SENTINEL=0
   SENTINEL_POLL_INTERVAL=5
   SENTINEL_MAX_WAIT=7200
@@ -89,10 +96,12 @@ reset_defaults
 parse_spawn_worker_args \
   --project "/tmp/project path" --branch "feat/flags" --worktree "/tmp/worker path" \
   --session "flags-session" --base-ref "origin/main" --command "codex exec" \
+  --branch-lifecycle long-lived \
   --worker-backend codex --pm-harness codex --runtime-profile strict \
   --api-provider provider-a --model model-a --provider-slot slot-a \
   --env-isolation isolated --wave-id wave-a --wave-worker-id worker-a \
   --verify-cmd "bash test-a.sh" --verify-cmd "bash test-b.sh" \
+  --require-verification --worker-type contract-extension \
   --with-sentinel --sentinel-poll-interval 7 --sentinel-max-wait 90 \
   --keep-tmux-on-terminal --no-trust-auto --trust-auto \
   --no-permission-auto --permission-auto --no-permission-auto-bg \
@@ -113,6 +122,7 @@ parse_spawn_worker_args \
 
 assert_eq "$PROJECT_DIR" "/tmp/project path" "project preserves spaces"
 assert_eq "$BRANCH" "feat/flags" "branch parsed"
+assert_eq "$BRANCH_LIFECYCLE" "long-lived" "branch lifecycle parsed"
 assert_eq "$SESSION" "flags-session" "session parsed"
 assert_eq "$WORKER_BACKEND" "codex" "backend parsed"
 assert_eq "$WITH_SENTINEL:$KEEP_TMUX_ON_TERMINAL" "1:1" "sentinel booleans parsed"
@@ -134,6 +144,8 @@ assert_eq "$ALLOW_PROMPT_ONLY_INSTALL_GUARD:$INSTALL_GUARD_DEGRADATION_SOURCE:$D
   "1:accepted degradation:1" "degradation receipt and dry-run parsed"
 assert_eq "${#VERIFY_COMMANDS[@]}:${VERIFY_COMMANDS[0]}:${VERIFY_COMMANDS[1]}" \
   "2:bash test-a.sh:bash test-b.sh" "repeatable verify commands preserve order"
+assert_eq "$REQUIRE_VERIFICATION:$WORKER_TYPE" "1:contract-extension" \
+  "verification requirement and worker type parsed"
 assert_eq "${#ADD_DIRS[@]}:${ADD_DIRS[1]}" "2:/tmp/b path" "repeatable add-dir preserves spaces"
 assert_eq "${#ALLOW_PATHS[@]}:${ALLOW_PATHS[0]}:${ALLOW_PATHS[1]}" \
   "2:skills/a/**:skills/b/**" "repeatable scope globs preserve order"
@@ -160,6 +172,11 @@ if printf '%s' "$help_output" | grep -Fq -- '--deps-mode'; then
   ok "usage documents --deps-mode"
 else
   bad "usage documents --deps-mode"
+fi
+if printf '%s' "$help_output" | grep -Fq -- '--branch-lifecycle'; then
+  ok "usage documents branch lifecycle"
+else
+  bad "usage documents branch lifecycle"
 fi
 assert_eq "$unknown_rc" "64" "unknown flag keeps exit 64"
 if printf '%s' "$unknown_output" | grep -Fq 'Unknown argument: --unknown-flag'; then

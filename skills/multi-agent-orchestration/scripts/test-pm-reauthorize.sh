@@ -17,6 +17,23 @@
 #   G. terminal create 失败：旧终端保留，无其他终端副作用
 #   H. register 其他失败：回滚新终端，旧终端保留
 #   I. 旧 runtime 无 task-list：状态探测降级 unknown，行为不比现状差
+#
+# Task-113 增补（TASK_REUSED 有界区分的 drift/unknown 防线，注册阶段兜底）：
+#   K. 复位后重试仍 TASK_REUSED：只重试一次，回滚新终端，旧终端保留
+#   L. 预检 failed → 复核翻回 dispatched（漂移=真单活出现）：fail-closed 不复位
+#   M. 预检 unknown + TASK_REUSED：fail-closed 不猜测不复位
+#
+# Task-116 增补（Badminton Lab 实测事故①：旧 Dispatch 已 worker_done/release/ack/
+# settled 后，METADATA 残留 dispatch_id 让 reauthorize 把死目标当 live，先合并授权、
+# 重写 launch.sh、创建替换终端才回滚。修复：任何 mutation（含 run-use 回绑）前读权威
+# Dispatch 状态，只有仍 live（未 released/acked/settled）的目标可继续，其余稳定输出
+# REAUTHORIZE_NOT_LIVE 并零副作用）：
+#   J.  settled（结算链走完）→ 预门禁拒绝，授权/launch.sh/终端/METADATA 零变化
+#   J2. released → 同 J 拒绝
+#   N.  已结算目标重复调用 → 零副作用、不累积终端
+#   O.  acked（released_retained）→ 同 J 拒绝
+#   O2. worker-show 不可达（状态未知）→ fail-closed 零副作用拒绝
+#   O3. 已结算目标不带 --allow-cmd 的纯快照刷新 → 同样拒绝
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -67,6 +84,11 @@ case "$1 $2" in
       exit 1
     fi
     status=$(cat "$S/task-status" 2>/dev/null) || status="ready"
+    # Task-113 漂移注入：task-status-next 存在时，本次返回当前值后一次性轮换进下一
+    # 状态（预检 failed → 复核 dispatched 的状态漂移场景）。
+    if [ -f "$S/task-status-next" ]; then
+      mv "$S/task-status-next" "$S/task-status"
+    fi
     printf '{"ok":true,"result":{"tasks":[{"id":"task-1","status":"%s"}]}}\n' "$status"
     ;;
   "orchestration check")
@@ -93,8 +115,15 @@ case "$1 $2" in
     mode=$(cat "$S/worker-start-result" 2>/dev/null) || mode="ok"
     # task_not_startable 一次性：模拟真实 Orca——task-update 复位 ready 后重试即成功。
     # TASK_REUSED 保持粘滞：活 Dispatch 存续期间重复注册必被单活 fencing 拒绝。
+    # task_reused_once（Task-113）：已结算 task 首次注册返回 TASK_REUSED；仅当 PM 已用
+    # task-update 复位 ready 后（task-update.count ≥ 1）重试才成功，复位前保持粘滞拒绝
+    # ——保证回归验证的是「复位 → 重试」因果链，而非重试本身。
     if [ "$mode" = "task_not_startable" ]; then
       printf 'ok\n' > "$S/worker-start-result"
+    elif [ "$mode" = "task_reused_once" ]; then
+      if [ -f "$S/task-update.count" ] && [ "$(cat "$S/task-update.count")" -ge 1 ]; then
+        mode="ok"
+      fi
     fi
     case "$mode" in
       ok)
@@ -112,6 +141,23 @@ case "$1 $2" in
         exit 1
         ;;
     esac
+    ;;
+  "orchestration worker-show")
+    # Task-116 liveness 预门禁数据源：默认 live dispatch（dispatched + 未 release）；
+    # 状态文件把旧 Dispatch 钉进结算链的不同阶段（settled ⊃ released/acked）。
+    if [ -e "$S/worker-show-unavailable" ]; then
+      echo "ERROR: unknown command: worker-show" >&2
+      exit 1
+    fi
+    if [ -e "$S/dispatch-settled" ]; then
+      echo '{"ok":true,"result":{"dispatch":{"id":"ctx-old","status":"settled"},"worker":{"state":"succeeded"},"terminalResource":{"releaseState":"released"}}}'
+    elif [ -e "$S/dispatch-acked" ]; then
+      echo '{"ok":true,"result":{"dispatch":{"id":"ctx-old","status":"completed"},"worker":{"state":"succeeded"},"terminalResource":{"releaseState":"released_retained"}}}'
+    elif [ -e "$S/dispatch-released" ]; then
+      echo '{"ok":true,"result":{"dispatch":{"id":"ctx-old","status":"completed"},"worker":{"state":"stopped"},"terminalResource":{"releaseState":"released"}}}'
+    else
+      echo '{"ok":true,"result":{"dispatch":{"id":"ctx-old","status":"dispatched"},"worker":{"state":"active"},"terminalResource":{"releaseState":"not_requested"}}}'
+    fi
     ;;
   "orchestration dispatch-show")
     echo '{"ok":true,"result":{"dispatch":{"id":"ctx-new-1"}}}
@@ -206,7 +252,9 @@ make_fixture() {
   rm -f "$SD/terminals.live" "$SD/terminals.closed" "$SD/task-update.count" \
         "$SD/terminal-create.count" "$SD/last-reply-body.txt" "$SD/last-reply-id.txt" \
         "$SD/last-terminal-send.txt" "$SD/terminal-create-fail" "$SD/task-list-unavailable" \
-        "$SD/task-status" "$SD/worker-start-result" "$SD/pending-message.json"
+        "$SD/task-status" "$SD/task-status-next" "$SD/worker-start-result" "$SD/pending-message.json" \
+        "$SD/dispatch-settled" "$SD/dispatch-released" "$SD/dispatch-acked" \
+        "$SD/worker-show-unavailable"
   printf 'term-old\n' > "$SD/terminals.live"
 }
 
@@ -340,6 +388,129 @@ run_reauth --allow-cmd "cmd-i"
 check "退出码非 0" test "$RC" -ne 0
 check "TASK_REUSED 仍给出 manual-recovery 而非裸错误" grep -q "PM_REAUTHORIZE_MANUAL_RECOVERY" <<<"$OUT"
 check "新终端已回滚" grep -qx "term-new-1" "$SD/terminals.closed"
+assert "旧终端保留且唯一" 'live_is_solely term-old'
+
+echo "Case J (Task-116): worker_done 结算后（release+ack+settled）→ 预门禁 REAUTHORIZE_NOT_LIVE 零副作用拒绝"
+make_fixture J
+printf 'failed\n' > "$SD/task-status"
+printf 'task_reused_once\n' > "$SD/worker-start-result"
+touch "$SD/dispatch-settled"
+cp "$SC/INSTALL_AUTHORIZATION.json" "$TMP_ROOT/J-auth-before.json"
+cp "$SC/launch.sh" "$TMP_ROOT/J-launch-before.sh"
+cp "$METADATA" "$TMP_ROOT/J-metadata-before.json"
+run_reauth --allow-cmd "cmd-j" --resume-text "结算残留已复位,从断点继续"
+check "退出码非 0（已结算目标不再经由 reauthorize 复活）" test "$RC" -ne 0
+check "输出含稳定机器码 REAUTHORIZE_NOT_LIVE" grep -q "REAUTHORIZE_NOT_LIVE" <<<"$OUT"
+check_not "零授权合并：--allow-cmd 未写入授权文件" grep -q "cmd-j" "$SC/INSTALL_AUTHORIZATION.json"
+check "launch.sh B64 未被改写" cmp -s "$TMP_ROOT/J-launch-before.sh" "$SC/launch.sh"
+check_not "零新终端创建" test "$(cat "$SD/terminal-create.count" 2>/dev/null || echo 0)" != "0"
+check_not "零 worker-start 调用" grep -q "^orchestration worker-start" "$FAKE_ORCA_LOG"
+check_not "零 task-update 复位" grep -q "^orchestration task-update" "$FAKE_ORCA_LOG"
+check_not "零 reply 消费" grep -q "^orchestration reply " "$FAKE_ORCA_LOG"
+check_not "零 run-use 回绑" grep -q "^orchestration run-use" "$FAKE_ORCA_LOG"
+check "METADATA 未变（仍路由旧终端）" cmp -s "$TMP_ROOT/J-metadata-before.json" "$METADATA"
+assert "旧终端保留且唯一（零终端副作用）" 'live_is_solely term-old'
+
+echo "Case J2 (Task-116): released（release 已做、settled 未完成）同 J 拒绝"
+make_fixture J2
+printf 'failed\n' > "$SD/task-status"
+printf 'task_reused_once\n' > "$SD/worker-start-result"
+touch "$SD/dispatch-released"
+run_reauth --allow-cmd "cmd-j2"
+check "退出码非 0" test "$RC" -ne 0
+check "输出含 REAUTHORIZE_NOT_LIVE" grep -q "REAUTHORIZE_NOT_LIVE" <<<"$OUT"
+check_not "零新终端创建" test "$(cat "$SD/terminal-create.count" 2>/dev/null || echo 0)" != "0"
+check_not "零 worker-start 调用" grep -q "^orchestration worker-start" "$FAKE_ORCA_LOG"
+assert "旧终端保留且唯一" 'live_is_solely term-old'
+check "METADATA 仍路由旧终端" test "$(jq -r '.session.orca.terminal_handle' "$METADATA")" = "term-old"
+
+echo "Case K (Task-113): 复位后重试仍 TASK_REUSED → 只重试一次,回滚新终端 fail-closed"
+make_fixture K
+printf 'failed\n' > "$SD/task-status"
+printf 'TASK_REUSED\n' > "$SD/worker-start-result"
+run_reauth --allow-cmd "cmd-k"
+check "退出码非 0" test "$RC" -ne 0
+check "worker-start 恰好两次(有界单次重试)" test "$(log_count 'orchestration worker-start')" = "2"
+check "task-update 恰好一次" test "$(cat "$SD/task-update.count" 2>/dev/null || echo 0)" = "1"
+check "新终端已回滚关闭" grep -qx "term-new-1" "$SD/terminals.closed"
+assert "旧终端保留且唯一(不累积终端)" 'live_is_solely term-old'
+check "METADATA 未变" test "$(jq -r '.session.orca.terminal_handle' "$METADATA")" = "term-old"
+
+echo "Case L (Task-113): 预检 failed → 复核翻回 dispatched(漂移=真单活) → fail-closed 不复位"
+make_fixture L
+printf 'failed\n' > "$SD/task-status"
+printf 'dispatched\n' > "$SD/task-status-next"
+printf 'TASK_REUSED\n' > "$SD/worker-start-result"
+run_reauth --allow-cmd "cmd-l"
+check "退出码非 0" test "$RC" -ne 0
+check "task-list 恰好两次(预检+复核)" test "$(log_count 'orchestration task-list')" = "2"
+check_not "漂移时不得复位 task" grep -q "^orchestration task-update" "$FAKE_ORCA_LOG"
+check "输出含漂移 fail-closed 标记" grep -q "PM_REAUTHORIZE_TASK_STATE_DRIFT" <<<"$OUT"
+check "新终端已回滚关闭" grep -qx "term-new-1" "$SD/terminals.closed"
+assert "旧终端保留且唯一" 'live_is_solely term-old'
+check "METADATA 未变" test "$(jq -r '.session.orca.terminal_handle' "$METADATA")" = "term-old"
+
+echo "Case M (Task-113): 预检 unknown + TASK_REUSED → fail-closed 不猜测不复位"
+make_fixture M
+printf 'TASK_REUSED\n' > "$SD/worker-start-result"
+touch "$SD/task-list-unavailable"
+run_reauth --allow-cmd "cmd-m"
+check "退出码非 0" test "$RC" -ne 0
+check_not "unknown 不得复位 task" grep -q "^orchestration task-update" "$FAKE_ORCA_LOG"
+check "TASK_REUSED 分类标记仍在" grep -q "PM_REAUTHORIZE_REGISTER_TASK_REUSED" <<<"$OUT"
+check "manual-recovery 指引仍在" grep -q "PM_REAUTHORIZE_MANUAL_RECOVERY" <<<"$OUT"
+check "新终端已回滚关闭" grep -qx "term-new-1" "$SD/terminals.closed"
+assert "旧终端保留且唯一" 'live_is_solely term-old'
+
+echo "Case N (Task-116): 已结算目标重复调用 reauthorize 零副作用、不累积终端"
+make_fixture N
+printf 'failed\n' > "$SD/task-status"
+printf 'task_reused_once\n' > "$SD/worker-start-result"
+touch "$SD/dispatch-settled"
+run_reauth --allow-cmd "cmd-n1"
+check "第一次拒绝" test "$RC" -ne 0
+run_reauth --allow-cmd "cmd-n2"
+check "第二次拒绝" test "$RC" -ne 0
+check "两次调用零新终端创建" test "$(cat "$SD/terminal-create.count" 2>/dev/null || echo 0)" = "0"
+assert "旧终端保留且唯一（活终端数不增长）" 'live_is_solely term-old'
+check_not "零 worker-start 调用" grep -q "^orchestration worker-start" "$FAKE_ORCA_LOG"
+check "METADATA 仍路由旧终端" test "$(jq -r '.session.orca.terminal_handle' "$METADATA")" = "term-old"
+
+echo "Case O (Task-116): acked（released_retained）同属结算链 → 拒绝"
+make_fixture O
+printf 'failed\n' > "$SD/task-status"
+printf 'task_reused_once\n' > "$SD/worker-start-result"
+touch "$SD/dispatch-acked"
+run_reauth --allow-cmd "cmd-o"
+check "退出码非 0" test "$RC" -ne 0
+check "输出含 REAUTHORIZE_NOT_LIVE" grep -q "REAUTHORIZE_NOT_LIVE" <<<"$OUT"
+check_not "零新终端创建" test "$(cat "$SD/terminal-create.count" 2>/dev/null || echo 0)" != "0"
+assert "旧终端保留且唯一" 'live_is_solely term-old'
+
+echo "Case O2 (Task-116): worker-show 不可达（状态未知）→ fail-closed 零副作用拒绝"
+make_fixture O2
+printf 'dispatched\n' > "$SD/task-status"
+printf 'TASK_REUSED\n' > "$SD/worker-start-result"
+touch "$SD/worker-show-unavailable"
+run_reauth --allow-cmd "cmd-o2"
+check "退出码非 0（未知状态不得带副作用推进）" test "$RC" -ne 0
+check "输出含 REAUTHORIZE_NOT_LIVE" grep -q "REAUTHORIZE_NOT_LIVE" <<<"$OUT"
+check_not "零授权合并" grep -q "cmd-o2" "$SC/INSTALL_AUTHORIZATION.json"
+check_not "零新终端创建" test "$(cat "$SD/terminal-create.count" 2>/dev/null || echo 0)" != "0"
+check_not "零 worker-start 调用" grep -q "^orchestration worker-start" "$FAKE_ORCA_LOG"
+assert "旧终端保留且唯一" 'live_is_solely term-old'
+check "METADATA 仍路由旧终端" test "$(jq -r '.session.orca.terminal_handle' "$METADATA")" = "term-old"
+
+echo "Case O3 (Task-116): 已结算目标不带 --allow-cmd 的纯快照刷新请求同样拒绝"
+make_fixture O3
+printf 'failed\n' > "$SD/task-status"
+touch "$SD/dispatch-settled"
+cp "$SC/launch.sh" "$TMP_ROOT/O3-launch-before.sh"
+run_reauth
+check "退出码非 0" test "$RC" -ne 0
+check "输出含 REAUTHORIZE_NOT_LIVE" grep -q "REAUTHORIZE_NOT_LIVE" <<<"$OUT"
+check "launch.sh 未被改写" cmp -s "$TMP_ROOT/O3-launch-before.sh" "$SC/launch.sh"
+check_not "零新终端创建" test "$(cat "$SD/terminal-create.count" 2>/dev/null || echo 0)" != "0"
 assert "旧终端保留且唯一" 'live_is_solely term-old'
 
 echo ""
