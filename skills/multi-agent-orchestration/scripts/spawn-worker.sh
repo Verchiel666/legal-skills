@@ -51,6 +51,8 @@ ensure_claude_in_path
 # 是否被宿主传入。CLI 选择顺序与版本匹配的 orca-cli skill 保持一致。
 # shellcheck source=orca-runtime.sh
 source "$SCRIPT_DIR/orca-runtime.sh"
+# shellcheck source=orca-coordinator.sh
+source "$SCRIPT_DIR/orca-coordinator.sh"
 # shellcheck source=harness-backend-policy.sh
 source "$SCRIPT_DIR/harness-backend-policy.sh"
 # shellcheck source=provider-lease-root.sh
@@ -141,10 +143,13 @@ ORCA_WORKTREE_ID="${ORCA_WORKTREE_ID:-}"  # 兼容旧调用方；命中 auto 后
 ORCA_WORKTREE_PATH=""    # 仅 auto 时填（git rev-parse --show-toplevel）
 ORCA_PROJECT_TOPLEVEL="" # `orca worktree current` 已验证的 PROJECT_DIR git top
 ORCA_EXPECTED_REPO_ID="" # 从 current worktree id 冻结，create 后必须一致
+# Preserve only the caller's injected selector before this variable becomes the worker handle.
+ORCA_CALLER_TERMINAL_HANDLE="${ORCA_TERMINAL_HANDLE:-}"
 ORCA_TERMINAL_HANDLE=""  # 形如 "term_xxx"，仅 auto 时填
 ORCA_APP_VERSION=""      # 来自 orca status --json
 ORCA_CAPABILITIES_JSON=""  # 来自 orca status --json capabilities 数组
 ORCA_TUI_READY_METHOD="orca_terminal_wait_tui-idle"
+ORCA_SETUP_MODE="skip"  # Repo Setup runs before MAO can install Session Context/guards.
 NO_ORCA_MODE=0
 # v2.1.1（Task-033）：ORCA supervised 注册（run-create + task-create + worker-start --terminal）。
 # --orca-supervised 启用时，ORCA 模式 spawn 后把 worker terminal 纳入 supervised 体系。
@@ -155,6 +160,7 @@ TASK_TITLE=""
 ORCA_RUN_ID=""
 ORCA_TASK_ID=""
 ORCA_COORDINATOR_HANDLE=""
+ORCA_EXPECTED_RUNTIME_ID=""
 ORCA_SUPERVISED_RUN_ID=""    # helper 输出，仅 --orca-supervised 时填
 ORCA_SUPERVISED_COORDINATOR_HANDLE=""  # Run 绑定的 PM terminal，用于 consumer fencing
 ORCA_SUPERVISED_TASK_ID=""   # helper 输出
@@ -401,6 +407,17 @@ detect_orca_mode  # 直接调，设全局 ORCA_MODE + ORCA_APP_VERSION/CAPABILIT
 if [ "$ORCA_MODE" = "missing_orca" ]; then
   exit 64
 fi
+if [ "$ORCA_MODE" = "auto" ] && [ "$ORCA_SETUP_MODE" != "skip" ]; then
+  echo "ORCA_SETUP_REQUIRES_PRELAUNCH_AUTH_CONTRACT: mode=$ORCA_SETUP_MODE is rejected before worktree/provider/terminal/dispatch side effects; repo Setup runs before MAO guards and is not authorized by --allow-install-command" >&2
+  exit 64
+fi
+if [ -n "$ORCA_EXPECTED_RUNTIME_ID" ] && { [ "$ORCA_MODE" != "auto" ] || [ -z "$ORCA_COORDINATOR_HANDLE" ]; }; then
+  echo "ERROR: --orca-runtime-id requires Orca mode and --orca-coordinator-handle" >&2
+  exit 64
+fi
+if [ "$ORCA_MODE" = "auto" ] && [ -n "$ORCA_COORDINATOR_HANDLE" ]; then
+  orca_runtime_require_identity "$ORCA_EXPECTED_RUNTIME_ID" || exit $?
+fi
 if [ "$ORCA_SUPERVISED" -eq 1 ]; then
   [ -n "$TASK_SPEC" ] || [ -n "$ORCA_TASK_ID" ] || { echo "ERROR: --orca-supervised requires --task-spec or --orca-task-id" >&2; exit 64; }
   [ -z "$ORCA_TASK_ID" ] || [ -n "$ORCA_RUN_ID" ] || { echo "ERROR: --orca-task-id requires --orca-run-id" >&2; exit 64; }
@@ -501,6 +518,33 @@ mem_budget_gate_run() {
   exit 4
 }
 mem_budget_gate_run
+
+# Prove the PM sender and Run before acquiring a lease or creating worker resources.
+# Existing Wave receipts stay read-only; single-worker callers may still create one Run.
+if [ "$ORCA_MODE" = auto ] && { [ "$ORCA_SUPERVISED" -eq 1 ] || [ -n "$ORCA_TASK_ID" ]; }; then
+  spawn_sender="$ORCA_COORDINATOR_HANDLE"
+  if [ -z "$spawn_sender" ] && [ -z "$ORCA_RUN_ID" ]; then
+    spawn_sender="$ORCA_CALLER_TERMINAL_HANDLE"
+  fi
+  orca_coordinator_select "$spawn_sender" "" 0 || exit $?
+  if [ "$DRY_RUN" -eq 1 ]; then
+    orca_coordinator_probe "$ORCA_EXPECTED_RUNTIME_ID" || exit $?
+    if [ -n "$ORCA_RUN_ID" ]; then
+      orca_coordinator_current "$ORCA_RUN_ID" || exit $?
+    fi
+    echo "ORCA_RUN: sender verified; prepare Run before worker resources (dry-run, no binding)"
+  elif [ -n "$ORCA_RUN_ID" ]; then
+    orca_coordinator_prepare verify "$ORCA_RUN_ID" "$ORCA_EXPECTED_RUNTIME_ID" || exit $?
+    if [ -z "$ORCA_EXPECTED_RUNTIME_ID" ]; then
+      echo "SPAWN_COORDINATOR_RUNTIME_REVERIFIED: current binding verified; historical continuity NOT_VERIFIED" >&2
+    fi
+  else
+    orca_coordinator_prepare create "" "$ORCA_EXPECTED_RUNTIME_ID" "$TASK_SPEC" || exit $?
+    ORCA_RUN_ID="$ORCA_PM_RUN_ID"
+  fi
+  ORCA_COORDINATOR_HANDLE="$ORCA_PM_SENDER"
+  ORCA_EXPECTED_RUNTIME_ID="$ORCA_PM_RUNTIME_ID"
+fi
 
 # shellcheck source=spawn-worker-provider-lease.sh
 source "$SCRIPT_DIR/spawn-worker-provider-lease.sh"
@@ -655,7 +699,7 @@ elif [ "$ORCA_MODE" = "auto" ]; then
      || git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/remotes/origin/$BRANCH" 2>/dev/null; then
     orca_base="$BRANCH"
   fi
-  ORCA_WORKTREE_ID=$(orca_worktree_create "$BRANCH" "$orca_base")
+  ORCA_WORKTREE_ID=$(orca_worktree_create "$BRANCH" "$orca_base" "$ORCA_SETUP_MODE")
   # ORCA worktree create 后实际 path 可能不是 PROJECT_DIR（ORCA 默认放 ~/orca/workspaces/<name>）；
   # 用 ORCA_WORKTREE_ID 解析的真实 path 覆盖 WORKTREE + ORCA_WORKTREE_PATH。
   if [ -n "$ORCA_WORKTREE_ID" ] && [ "$ORCA_WORKTREE_ID" != "orca_worktree_id_placeholder" ]; then
@@ -1268,6 +1312,10 @@ node_mem_cap_setup() {
 
 dependency_install_guard_setup
 scope_guard_setup
+# Session Context location is independent of install/scope guard activation.
+# This locator grants no authority and must agree with any existing guard binding.
+printf -v session_context_q '%q' "$SESSION_CONTEXT"
+COMMAND="env WORKER_SESSION_CONTEXT=$session_context_q $COMMAND"
 node_mem_cap_setup
 write_metadata
 

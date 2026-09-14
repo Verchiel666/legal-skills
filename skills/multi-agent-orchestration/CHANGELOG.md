@@ -1,5 +1,120 @@
 # Changelog
 
+## [2.24.0] - 2026-09-13
+
+### 新增
+
+- Supervised Task 强制前缀加入 Worker ask/resume 与自然检查点收件协议：阻塞问题超时、取消或断线后只恢复原 message ID；新文件前、每次 scoped test 后及 `worker_done` 前排空 consuming check，处理整批后仅 ack 自有 Worker Delivery，`consumer_fenced` 或 `dispatch_inactive` 时立即停止。
+- PM wait 为完整 FIFO Delivery 生成顺序分类 receipt，明确 question、escalation、worker_done 的不同处置义务；reply 支持同一未知结果的 `--retry-request` 精确恢复，并返回不夸大的持久回复 receipt。
+
+### 修复
+
+- Worker Shell 门禁不再允许以 `peek/all/unread` 冒充已处理 guidance，也拒绝 resume 时附带新 options、无 wait 的 timeout/types 与无界 wait；只允许绑定自身 handle 的 Worker Delivery ack，coordinator handle ack、reply、release、stop 和 Task mutation 权限维持拒绝。
+- PM wait 同时校验 result 与逐消息 Run，拒绝 alias 冲突、超过 50 条、空/非字符串 ID、缺少显式 null 的空批 Delivery 或 count 不一致。ack 除精确 Run 与 acknowledged Delivery ID 外，还完整校验同一响应交付的下一批、拒绝旧/新 Delivery 复用同一 ID，并单列 next Delivery receipt，避免确认上一批时遗漏下一批。reply 的 mutation 前预检改按 Orca 1.4.200 真实 question 行校验 `dispatch:<dispatch> → run:<run>` 路由、message-id thread 与 JSON-string Task/Dispatch payload，再用 post-reply asker 绑定 worker terminal；post-reply 对所有出现的 aliases 保留显式 null 并要求 reply 使用独立 message ID。跨 Dispatch、复用 question ID 或任一路由/alias 漂移继续失败关闭。所有 receipt 均区分入队、可见、消费、回复、执行和业务完成，避免把队列动作误报为工作已执行。
+- 修正上一版把 `--retry-request` 当作业务自定义键的真实 CLI 不兼容：首次 send/reply 必须省略，恢复时只接受 Orca 对未知 mutation 回传的 UUID；transport retry 不再混入业务 payload 或请求摘要，避免原命令与恢复参数漂移。
+
+### 验证
+
+- 新增 stateful fake-Orca 回归，覆盖旧 Delivery 重放、50 条 FIFO 边界、逐消息 Run 漂移、显式 null 空批、ack 响应内下一批及畸形/同 ID 批次、真实 Orca question message row、post-reply 显式 null alias/复用 question ID、同 Orca UUID 幂等回复与换 UUID 重复回复；同步扩展真实 Task spec、sender argv、transport retry UUID 和 Shell 门禁正反例。fake 测试不替代真实跨 session 消息层或 provider 全生命周期验证。
+- 在 Orca 1.4.200 的两个隔离 shell terminal 上完成真实消息层正例：ask timeout 保留原 message ID、PM Delivery 在 ack 前同批重放、重复同答案复用原 reply、resume 得到答案、guidance 在 Worker 自有 Delivery 中消费并 ack 后不再 unread。测试 Dispatch 已 fence、两个精确 terminal 已关闭；未启动 provider，不能据此声明 backend 全生命周期通过。
+
+## [2.23.9] - 2026-09-13
+
+### 新增
+
+- PM supervised `send` 增加显式 `--message-contract`：以 Orca 原生消息承载经 `worker-show` 复验的 Run/Task/Dispatch/worker、sender、thread、correlation、expected action 与 typed evidence，不另建聊天层。
+- 增加只读 `inbox` 命令，固定使用 `check --peek` 观察当前 coordinator inbox，不重绑 Run、不改 metadata、不消费或 ack Delivery；receipt 只统计精确 Run/Task/Dispatch，可选再按 thread+correlation 双过滤。
+
+### 修复
+
+- 明确 `durably_enqueued → delivered_visible → consumed → replied → action_started → business_completed` 六层证据边界；Dispatch send 只有在同一真实 relay 的 destination、dispatchId 与 messageId 均验证后才生成 enqueue receipt，不接受旁支或旧形状 message ID，也不把发送成功误读为已送达、已执行、已完成。原生 thread 改为承载 correlation，业务 thread 留在 payload，使原生无 payload reply 可在严格双过滤下关联；这种可见性仍不证明执行过 reply。
+- 对消息类型、优先级、标识符、仓库相对 evidence path 和所有用户可控消息字段（含 inbox 的显式/记录 sender 与 worker handle）做敏感载荷检查；同一 retry ID 只允许完全相同的请求摘要，变化时在首次 Orca 调用前拒绝。runtime/sender 漂移、Task/Dispatch 错绑、缺消息 provenance、顶层或 payload lifecycle/sender/recipient/type 别名冲突、错 coordinator recipient 或非 live 发送目标继续失败关闭。
+
+### 验证
+
+- 新增 fake-Orca 参数级回归，使用当前真实 relay/check/reply schema 覆盖权威 worker-show 关系、message ID/请求摘要 receipt、relay 缺失/错目标/旁支 ID、原生 argv/payload、normal priority、相同与冲突 retry、旧 send 兼容、敏感字段零副作用拒绝、peek 不消费、空/缺 sender/错 sender/缺 provenance/跨 Dispatch/顶层与 payload 别名冲突 inbox、无 payload 原生 reply correlation bridge、stale runtime/sender 与异常 receipt。
+
+## [2.23.8] - 2026-09-13
+
+### 修复
+
+- Orca worktree 创建默认并固定使用 `--setup skip`，避免 repo Setup 在 Session Context、安装门禁和 scope hook 写入前执行依赖安装或其他环境变更。
+- 新增 `--orca-setup-mode` 审计入口；`inherit/run` 在任何 worktree、provider、terminal 或 Dispatch 副作用前稳定拒绝，且明确不继承 `--allow-install-command` 的后置授权。
+- Session metadata 记录实际 `setup_mode`；tmux 路径写入 `not_applicable`，避免把未发生的 Orca Setup 冒充已验证事实。
+
+### 验证
+
+- 增加 helper 与完整入口正反例：核验正常路径真实 argv 为 `--setup skip`，`inherit/run` 零 Orca mutation，单独安装授权不能绕过前置拒绝，并保持 supervised 成功路径和 tmux 语义不变。
+
+## [2.23.7] - 2026-09-13
+
+### 改进
+
+- 实际 supervised Task spec 补齐最小实施、scoped 验证、授权文件提交与唯一 Session Context RESULT 规则；review-only/no-change 不造空提交，路径绑定缺失或冲突时停止猜测，不扩 Shell、安装或 PR 权限。
+- 各后端统一注入仅用于定位的 WORKER_SESSION_CONTEXT，并核对既有 guard 路径；合法 Codex prompt-only 降级且无 scope 的启动也能定位交付目录，不把路径注入冒充 guard 已启用。
+- 补任务辅助命令的既有精确授权流程与根级 .venv opt-in 复用指引，说明软链忽略陷阱、共享 exclude 和源环境保护。
+- 启动失败恢复以 request/Dispatch/资源归属回执为依据，撤下按空标题直接清终端的建议；区分原生与 external terminal 回收、未知结果恢复、信任弹窗授权和心跳/业务进度。
+
+### 验证
+
+- 新增真实 Task 构造/启动命令、Session Context 绑定、真实 guard hook 及 sender 契约正反例；tmux smoke 使用独立 socket 和无转发 Orca stub，验证兼容路径且不触真实 Orca 资源。代表性脚本证据不替代真实 provider 全生命周期证明。
+- 跨 Claude/Codex、实施者/reviewer、有无 scope 的真实生成命令执行交付路径检查，并验证冲突绑定继续拒绝，避免仅测试具备 hook 的后端产生假覆盖。
+
+## [2.23.6] - 2026-09-13
+
+### 修复
+
+- PM 与 Wave 支持显式 sender，核验精确终端、当前 runtime 和 Run/coordinator，避免非 Orca PM 缺身份或误用已关闭终端。已有 session 绑定不被环境覆盖；只读入口不重绑或改写 metadata。
+- Single Worker 在 quota/mem 通过后、lease/worktree/terminal 创建前准备 Run；预建 Wave 只读核验，不重复创建 Task。metadata 保留 runtime 身份，旧记录的迁移只证明当前绑定，不追认历史连续性。
+- send/reply/Run 使用官方 --from，check/ack 使用 --terminal；release/retain 遵守仅 --dispatch 的官方合同并做前置身份核验。修正 --no-orca-mode 帮助，区分 tmux 控制路径和可能保留的只读宿主探测。
+
+### 验证
+
+- 增加 sender、关闭/漂移身份、早期零 Worker 资源、只读入口和实际 argv 回归；随行修正已有 metadata Git 权限事实与旧断言漂移，不改变生产权限。真实 backend 全生命周期与重启期间派发未由 fake CLI 测试证明。
+- 邻接 settle、handoff、重新授权、runtime 与内存测试迁移完整 sender 回执，验证实际抵达目标分支，避免在身份前门提前退出造成假阳性；真实 Orca smoke 以只读代理验证无/错 sender 的拒绝，不用虚构 Wave 身份冒充正例。
+
+## [2.23.5] - 2026-09-13
+
+### 修复
+
+- Orca 同仓自动注册采用 Git common-dir 普通文件锁与锁内二次读取，避免多个 helper 基于同一过期快照重复注册；CLI 调用与锁等待均有界，不依赖外部 flock 命令。
+- 注册请求前持久记录 pending，超时、回执丢失或身份复验失败后不再盲试 repo add；已有明确 repo.id 时必须匹配，未知标记与不安全锁文件保留并拒绝。
+
+### 验证
+
+- 增加真实多进程配合 fake CLI 的同仓竞态、独立仓并发、linked worktree、未知结果恢复、身份错配与锁安全回归；不代表 Orca UI/其他客户端也受此 helper 的锁约束，真实注册 mutation 与 provider 生命周期未验证。
+
+## [2.23.4] - 2026-09-13
+
+### 技术优化
+
+- 修正自动注册、PM 巡检和 reviewer 测试的退出码语义：只有预期的 grep 无匹配可计为零结果，读取、检测器或排序失败不得证明成功；增加故障注入回归。
+- 后端授权测试改用隔离策略，同时验证默认拒绝与显式允许，不再依赖本机或发布配置中的个人授权，正式策略不变。
+- 忙锁测试区分完整 CLI 观测开销与锁等待：保留真实持锁时 exit 75、state_lock_busy、零发送，直接核验非阻塞 flock，不以提高墙钟阈值冒充性能修复。
+
+### 验证
+
+- 五套定向测试通过；本次仅改测试，不代表真实 provider 生命周期或全 Skill 指令稳定性已经验证，也不包含另行审查的完成权限候选改动。
+
+## [2.23.2] - 2026-09-12
+
+### 修复
+
+- Wave receipt 冻结 runtime 身份，并通过 spawn/register 显式参数在派发链重复核对，发现重启或身份不可验证时停止相应派发；旧调用明确报告未验证，保留 consumer fencing 的最终判断。
+- Provider wrapper 遵守显式单认证模式，settings/renderer 增加 `--auth-type`；默认双变量与空串兼容模式保留。拒绝双配置来源和 settings 相反键重载风险，不根据名称或 URL 自动改写认证选择。
+
+### 验证
+
+- 增加 runtime 身份漂移与认证有效环境的正反例；采用 fake Orca 与本地子进程探针。真实重启期间派发、Claude 配置重载及 provider 请求仍为 `NOT_VERIFIED`。
+
+## [2.23.1] - 2026-09-12
+
+### 修复
+
+- PR 审计对标准 unified diff 的 hunk 函数上下文注记做归一化，避免 Git 与 GitHub 渲染不同导致相同补丁无法 adopt。保留 hunk 行号与数量、文件路径、模式、内容空白和二进制载荷的差异；仓库、base/head OID、任务归属和唯一性条件维持原有校验。
+- 补齐注记差异的真实 Git 仓 + fake gh 路由回归，以及范围、模式、路径、空白、内容和二进制差异的反向断言。
+- diff 命令保留原始换行与非 UTF-8 字节，指纹仅按 LF 分行，防止正文中的 CR、Unicode 或垂直分隔符暴露伪 hunk/index 头并掩盖实际内容变化。
+
 ## [2.23.0] - 2026-09-11
 
 ### 新增
