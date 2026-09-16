@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.27.0] - 2026-09-15
+
+### 改进
+
+- hermes PM 宿主授权面由 claude-code/codex 扩为**全部受支持 worker backend**（claude-code、codex、codebuddy、qoderwork-cn、zcode），用户明确授权；测试断言同步（hermes→codebuddy / hermes→qoderwork-cn 嵌套交集由 fail-closed 反转为放行）。
+
+## [2.26.0] - 2026-09-15
+
+### 新增
+
+- hermes 接入 PM 宿主白名单（用户明确授权，记录于 `config/harness-backend-policy.json` `policy_notes`）：Hermes Agent 作为 PM 派发 claude-code/codex worker。宿主识别走路径级签名——进程帧含 `Hermes.app` bundle 路径或 `.hermes/hermes-agent/` 安装目录才算 hermes，裸 `hermes` 词不作签名防止无关路径误命中；`canonical_harness_backend` 收 `hermes` 别名。帧匹配逻辑提取为 `pm_harness_candidate_for_frame` helper（行为保持），配套回归 `scripts/tests/test-harness-backend-policy.sh`（签名匹配/白名单交集/deny-by-default/本机 Hermes 祖先链实测）。
+
+## [2.25.0] - 2026-09-14
+
+### 新增
+
+- sub2api 网关四条积分 lane（qwenworkai / lobsterai / autoclaw / codebuddy）接入额度 summary 生产链：`scripts/quota_summary_sub2api.py` 从网关 `/ui/api/quota` 聚合端点拉取并合并写入 summary 合同（只更新这四条 lane、其余 lane 原样保留；qw 每日 100 当日过期、lobster campaign 分项临期 → lane 记录带 `remaining_total` / `credit_items`，PM 派简单批量任务前先看临期分项，把当日过期积分在过期前吃掉）。数据流与 lane 定义读取 `references/24-sub2api-quota-producer.md`（纯知识文档，脚本不读取）；配套测试 `tests/test-quota-summary-sub2api.py`（4 用例）。
+
 ## [2.24.0] - 2026-09-13
 
 ### 新增
@@ -130,6 +148,22 @@
 ### 文档完善
 
 - 记录当前 Orca 字段来源与合成回归边界；生产 provider 及真实生命周期验证单独标记，不由本地协议测试推定。
+
+## [2.22.1] - 2026-09-07
+
+### 新增
+
+- `references/09-zcode-cli-worker.md` 新增 §11「发行版全景与上游 TUI 建模研究」：发现 npm 社区**非官方**终端客户端 `zcode-app-cli`（kingsword09/zcode-cli，MIT，v3.11.2-21，`--version` 输出带 `zcode-app-cli` 前缀；实现=从 ZCode Desktop 提取官方 `glm` 内核作 node 子进程、自带 `pi-tui` 交互层，凭证/agent 逻辑留在官方内核，README 自述 not affiliated with Z.ai），据此把 §1/§5.1 的"无 TUI"旧表述修订为按客户端区分（官方桌面捆绑 0.16.x 仍无 TUI，本 skill 现行 driver/app-server 路径不变，"官方无独立 CLI 分发"维持成立）；收录上游 stablyai/orca PR #13965/#16227/#16228（未合并）对 zcode 的 TUI 建模：`--version` 特征位发行版探测（其交互路径锚定的正是上述社区客户端）、`agent-input`（composer 粘贴 + 就绪三重门：进程 → composer input-ready → hook 上报 provider session）vs `startup-command`（argv 一次性，fail-closed）注入分流、状态经 Claude 兼容 hook（7 事件含 PreToolUse，配置面 `~/.zcode/cli/config.json` `hooks.events`）+ SQLite 会话库而非刮取 TUI；`config.json` 多写者并发风险入册（本机 `.bak-pm`/`.bak-pm2`/`.bak-zcode-worker` 实证，任何写入须备份+原子写+校验）；社区客户端 bin 名同为 `zcode`，安装后须 `which -a zcode` 核对不遮蔽官方软链。§8 install-guard 的"无 PreToolUse hook 机制"历史依据标注待重验（上游证据显示 hook 存在，本机未验证，行为不变）。archive 草稿同步版本记录修订行。
+- 研究来源与未验证边界：上游 PR diff 通读 + `npm view zcode-app-cli` + repo README 阅读 + 本机 `zcode --version`（0.16.5 裸号）/config 结构/ps 进程观测；社区客户端与 hook 能力均标注"未本机验证"，验证项落在 TASKS `TASK-2026-09-07-ZCODE-DISTRIBUTION-RESEARCH`（安装属非官方第三方包，信任决策与安装授权均归用户）。
+
+### 非目标（边界）
+
+- 不改 zcode backend 行为：driver/app-server/headless 路径、install-guard 降级、身份门禁全部维持原状；发行版区分与研究结论仅入 reference，不产生新的自动探测或配置写入。
+- 不安装 npm `zcode-app-cli`、不修改 `~/.zcode/cli/config.json`（多写者文件，且属用户环境副作用）。
+
+### 验证
+
+- docs-only 改动（reference + CHANGELOG + TASKS + archive 版本记录），无脚本/模板/配置/主文档变更，不在 `references/19-maintainer-validation.md` 强制范围内；`scripts/` 无任何解析 09 号文档的逻辑（grep 确认 references 仅作 help 文本指针），无测试联动。
 
 ## [2.22.0] - 2026-09-06
 
