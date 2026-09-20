@@ -34,15 +34,14 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-16 | 更新   | [video-compressor](skills/video-compressor/)                           | v1.5.0  | **源码率感知编码选择 + 防覆盖**：源码率 ≤3 Mbps（录屏/课件特征）自动改用 x264 CRF 自适应编码（实测录屏压缩比 80-88%、12-20x 实时），修复硬件路径写死 2000k 目标码率压低码率源仅省 11% 的问题；输出已存在自动序号递增防静默覆盖（`--overwrite` 才允许）；补 Python 3.9 兼容；SKILL.md 硬约束固化"长视频一律 `--detach`"。 |
-| 2026-09-16 | 更新   | [tingwu-asr](skills/tingwu-asr/)                                       | v0.4.4  | **跨 runtime 鲁棒性修复**：Apple Silicon 上 cryptography≤41 的 OpenSSL CPU 探测死循环致脚本无输出挂死，入口自动设 `OPENSSL_armcap=0` 绕过；AI 总结改三分支（无 json 提示不报错 / 有 json 真实注入 / 子进程改 `sys.executable`）；落地 status=2 后端拒绝软错误识别（防无限轮询）+ 补 `--once`/`--task-id` CLI，watch_active.sh 恢复可用；存量 4 单测全挂转 4/4 通过。 |
-| 2026-09-13 | 更新 | [multi-agent-orchestration](skills/multi-agent-orchestration/) | v2.24.0 | 完成 Orca Worker 阻塞问答与收件闭环：ask 超时/断线按原 message ID 恢复，Worker 在自然检查点和完成前强制消费 follow-up；PM 按 50 条 FIFO Delivery 顺序分类、精确 reply/ack receipt 收口，严格区分入队、可见、消费、回复与执行。 |
-| 2026-09-13 | 更新   | [skill-lint](skills/skill-lint/)                                       | v2.8.1  | **Git 副作用审计误报修复**：HFA-011 按真实 Git 子命令识别，不再把 `cat-file ...^{commit}` 当作工作树提交；远端 worker 分支删除改按 exact-tip lease、远端 head 读取与删除后复验审查。 |
-| 2026-09-09 | 更新   | [piclist-upload](skills/piclist-upload/)                               | v1.3.0  | **连通性检查假阳性根除 + 自动启动**：`lsof` 端口级探测 + `--noproxy '*'` 直连替代裸 curl（系统代理对本地端口返 503 会欺骗旧检查）；PicList 未运行时自动启动并等待就绪；单图失败重试 1 次，故障分级提示。 |
-| 2026-09-09 | 更新   | [tingwu-asr](skills/tingwu-asr/)                                       | v0.4.2  | **登录 cookie 完整性修复**：保存前暖机（触发 `user/info` 等 API）+ 多轮轮询至 cookie 集合稳定 + 关键字段（`XSRF-TOKEN`/`JSESSIONID` 等 6 项）校验，缺失即 fail-closed 退出，根除偶发 `[CMN.NotLogin]`。 |
-| 2026-09-09 | 更新   | [legal-text-format](skills/legal-text-format/)                         | v1.2.2  | **案例格式化脚本恢复可执行**：修复阻断启动的引号替换语法、案例标记正则错误、无页脚输入越界和当前目录输出失败，并增加虚构案例回归测试与独立 CI。 |
-| 2026-09-07 | 更新   | [git-workflow](skills/git-workflow/)                                   | v1.8.3  | **长期分支 PR 实战三坑入册**：集成 PR 时机红线（里程碑未到只开子 PR，总 PR 仅作合并提醒）、head 分支重置致 PR 静默自动 CLOSED 的判别与重开改号处置、squash 重做断裂的树等价 fail-closed 验证流程；均经 custom-skills 拆分线实证。 |
-
+| 2026-09-20 | 更新   | [multi-agent-orchestration](skills/multi-agent-orchestration/)         | v2.27.4 | **维护上下文与回归收口**：任务/决策源改为随 Skill 跟踪，合并状态、依赖和接手合同不再只留在单一会话；修复 reauthorize 授权回执兼容、全角括号邻接变量与内存预算 opt-out 回归；补齐隔离测试和 Orca/ZCode 读取路由。 |
+| 2026-09-20 | 更新 | [moot-court](skills/moot-court/) | v1.2.1 | **Runtime 分级验证门禁**：按命令入口、模型、子任务、落盘、四发言短闭环和完整民事流程逐级验收；Claude Code短闭环实测通过但有语义发现，完整候选仍待验证；WorkBuddy、千问办公等办公类Agent列入后续实测。 |
+| 2026-09-19 | 正式发布 | [legal-skill-alignment](skills/legal-skill-alignment/) | v1.0.7 | **迁移公开发布（自私有仓整树快照迁移）**：写法律 Skill 前的五问目标对齐（question-set/v1），把零散经验／办案 SOP／咨询记录厘清为结构化 Legal Skill Brief v1 交给 skill-creator 编译；私有仓内部技能引用泛化为通用表述（五问流程与 Brief 契约无变更）；evals 附 2026-08-23 独立复核全套 sha256 固化证据。 |
+| 2026-09-19 | 正式发布 | [legal-skill-evaluation](skills/legal-skill-evaluation/) | v0.8.12 | **迁移公开发布（自私有仓整树快照迁移）**：法律 Skill 分层质量评测（skill-lint 通用门禁 + 三份测试材料／六维度／律师 taste 领域评测 + 最小修复单元定位）；修正 frontmatter 版本漂移（0.8.1→0.8.12）与 homepage；20 例 capability suite 执行证据链与 suite／receipt 双门禁齐全。 |
+| 2026-09-18 | 更新   | [yuandian-law-search](skills/yuandian-law-search/)                     | v1.9.1  | **归档失败与响应交付解耦（issue #158 修复）**：归档目录不可写只降级 stderr 告警，不再吞掉已取得的 API 响应、不自动重试（杜绝误判重试重复扣积分）；新增 `--no-archive` 关闭全部本地留存（查重仍读已有归档）与 `--archive-dir`/`YD_ARCHIVE_DIR` 自定义归档目录；修正 `--no-report` 失实语义；补 4 项无网络故障注入回归。 |
+| 2026-09-18 | 更新   | [tingwu-asr](skills/tingwu-asr/)                                       | v0.4.4→v0.4.6 | **跨 runtime 鲁棒性 + 异步监控会话无关化 + OSS 上传代理隔离**：cryptography≤41 OpenSSL 探测死循环自动绕过；监控改 nohup 脱离会话 + 恢复接管四步（进程丢失≠任务丢失）；上传 session 默认 trust_env=False 直连国内 OSS（常驻代理掐断 771MB 上传的根治，TINGWU_OSS_USE_PROXY=1 逃生阀），yt-dlp 不受影响；：上传 session 默认 `trust_env=False` 无条件忽略环境代理直连国内 OSS——v0.4.5 只做了文档提醒，常驻 Clash 代理仍会掐断 771MB 级大文件分片上传（50% 处 ProxyError）；`TINGWU_OSS_USE_PROXY=1` 逃生阀恢复旧行为；requests 兜底 PUT 同样隔离；yt-dlp 下载不受影响。新增 5 用例代理隔离回归测试。 |
+| 2026-09-18 | 更新   | [piclist-upload](skills/piclist-upload/)                               | v1.4.0  | **跨系统兼容性根修 + 两个存量 bug**：脚本去 bash4+ 依赖（关联数组→换行列表），macOS 自带 bash 3.2 开箱即用（旧版 `declare -A` 直接报错，v1.1.1 只改 shebang 未根治，`/usr/bin/env bash` 在 macOS 仍解析到 3.2）；`bc`→`awk`、`lsof` 缺失回退 `/dev/tcp`；修复重复引用图片在本地文件删除后留死链（现复用已传 URL）；修复路径含括号（如 `file (1).png`）在首个 `)` 截断解析失败。 |
+| 2026-09-18 | 更新   | [legal-ocr](skills/legal-ocr/)                                         | v1.6.0  | **本地 RapidOCR 后端**：`--backend rapid` onnx 本地推理转 Markdown（PDF 220 DPI 渲染 + 几何行排序 + CJK/数字空格与全角数字归一，段落交给既有后处理链重建）；无 API 配置且已装 RapidOCR 时 auto 优先本地识别（材料不出本机），云端失败后亦有本地兜底；顺带修复具状人/证据 N 标签被硬换行整理粘连的问题。 |
 </details>
 
 ## 📋 项目概述
@@ -222,6 +221,15 @@
 <td></td>
 </tr>
 <tr>
+<td><a href="skills/moot-court/"><strong>moot-court</strong></a></td>
+<td>通用·诉讼</td>
+<td style="word-break:break-word">基于案卷自动组织多角色模拟庭审：法官与民事原被告／刑事控辩通过书记员记录交换发言；支持版本化材料、取消重派与进度恢复，交付庭审笔录、争点复盘和庭前补强清单</td>
+<td style="text-align:center">CC-BY-NC</td>
+<td style="text-align:center">v1.2.1</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><a href="skills/contract-copilot/"><strong>contract-copilot</strong></a></td>
 <td>通用·合同</td>
 <td style="word-break:break-word">合同起草与审查助手，基于分层分析与四步流程，输出可执行的风险清单、起草骨架、修改建议、推荐措辞和审查意见书，支持批注与修订两种文档处理方式</td>
@@ -336,6 +344,24 @@
 <td style="text-align:center">CC-BY-NC</td>
 <td style="text-align:center">v0.8.2</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.08.06/legal-visualization-0.8.2.zip">下载 v0.8.2</a></td>
+<td></td>
+</tr>
+<tr>
+<td><a href="skills/legal-skill-alignment/"><strong>legal-skill-alignment</strong></a></td>
+<td>专业·Skill开发</td>
+<td style="word-break:break-word">写法律 Skill 前的前置目标对齐：通过苏格拉底式五问（question-set/v1）把零散的法律经验、办案 SOP、咨询记录厘清为结构化 Legal Skill Brief v1，交给 skill-creator 等下游编译；含法源溯源三列、敏感材料边界与 blocker/warning 待确认清单</td>
+<td style="text-align:center">CC-BY-NC</td>
+<td style="text-align:center">v1.0.7</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><a href="skills/legal-skill-evaluation/"><strong>legal-skill-evaluation</strong></a></td>
+<td>专业·Skill开发</td>
+<td style="word-break:break-word">法律 Skill 分层质量评测：消费 skill-lint 通用质量结论，再用三份测试材料、通用六维度、场景微调与律师 taste 评估法律产出并定位最小修复单元；含评测包结构化契约、运行收据门禁与指令稳定性边界</td>
+<td style="text-align:center">CC-BY-NC</td>
+<td style="text-align:center">v0.8.12</td>
+<td></td>
 <td></td>
 </tr>
 </tbody>
@@ -583,7 +609,7 @@
 <td>工具·Skill开发</td>
 <td style="word-break:break-word">Skill 创建预检与可靠性验收工具，支持具体 Harness 失效模式批量定位、旧版指令失稳识别、领域 checker 双向充分性边界、硬要求来源定位、逐约束追踪、验证模态/产物阶段匹配、Ed25519 签名证据与多轮漂移门禁、业务流和安全风险审查</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v2.8.1</td>
+<td style="text-align:center">v2.9.0</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.08.06/skill-lint-2.8.0.zip">下载 v2.8.0</a></td>
 <td>正式验收需区分 Harness 审查、指令稳定性与领域功能验证</td>
 </tr>
@@ -628,7 +654,7 @@
 <td>工具·Agent协作</td>
 <td style="word-break:break-word">Orca-first 多 Agent 本地编排，支持 Wave receipt、worktree/terminal UI、Run/Task/Dispatch、worker transcript、Orca 429 idle 巡检与错峰唤醒、严格 lifecycle 结算、五后端总控、Harness 层级门禁、Wave Autopilot live-session 快路径与 L2 跨会话持久 controller core</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v2.24.0</td>
+<td style="text-align:center">v2.27.4</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.08.06/multi-agent-orchestration-1.20.5.zip">下载 v1.20.5</a></td>
 <td></td>
 </tr>
