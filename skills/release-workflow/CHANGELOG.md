@@ -1,5 +1,30 @@
 # 变更日志
 
+## [1.5.1] - 2026-09-21
+
+### 修复（v2026.09.21 发布暴露的三个链路缺陷）
+
+- **`scripts/generate-release-notes.py` 本版 skill 总数误报**：`{total}` 原优先读 README badge（`Skills-<数字>`），badge 已不存在时静默回退到最近更新条数（top_n=5），v2026.09.21 Release Notes 因此误写"本版包含 5 个 skill"（实际 64 个，事后人工 `gh release edit` 修正）。现优先数 `OUTPUT_DIR`（默认 `pack-skills/`）下的 zip 数量——release.yml 中 `build-zips.sh` 先于本脚本执行，产物必在；badge 降为次选，recent 条数仍为最后兜底；完成提示行输出总数便于 CI 日志核对。
+- **`.github/workflows/update-readme.yml` 触发机制从未生效**：release.yml 用内置 GITHUB_TOKEN 创建 Release，GitHub 防递归机制下该事件不会级联触发 `on: release: published` 的其他 workflow（v1.4.0 已观察到现象，本次定位根因）。该 workflow 新增 `workflow_dispatch` 手动兜底，并改为调用 `scripts/update-readme.py`——删除漂移的 inline 旧副本（其正则只认 `latest/download` 占位形式，与 README 实际使用的显式 tag 形式不匹配，即使触发也替换不上）。
+- **`.github/workflows/release.yml` 新增内嵌 README 回写**：上传 zip 后 checkout main → 调 `scripts/update-readme.py`（v1.4.1 已修好正则的版本）→ commit + push。此前该回写只存在于 `release-monorepo.sh` 本地驱动路径；直接 push tag 走 CI 发版时（v2026.09.21 的实际路径）README 下载链接滞留旧 tag，需人工经 API 补写（commit 0c7a798f）。
+
+### 文档完善
+
+- `SKILL.md` 模式 B 核心流程与 `references/monorepo-release.md` 端到端流程同步新机制：README 回写以两条发布路径（CI 的 release.yml 内嵌步骤 / 本地的 release-monorepo.sh）为准，`update-readme.yml` 降为 `workflow_dispatch` 手动兜底，并注明 GITHUB_TOKEN 防递归根因。
+
+## [1.5.0] - 2026-09-21
+
+### 新增
+
+- **贡献者致谢（Attribution）规则**：`references/release-notes-guide.md` 新增「贡献者致谢」章节——外部贡献者 PR（含被「承接 #N」重做的原始 PR、Co-Authored-By 外部作者）必须在 Release Notes 致谢：条目行内 `(#N, @user)`（必选）+ 文末「贡献者」汇总节（推荐）；维护者自身与 bot 不标。`desktop-standard` 固定结构新增第 9 项「贡献者」节（无外部贡献者时省略），推荐模板同步补充。
+- **SKILL.md 第 2 步新增来源 3（PR 作者识别）**：`gh pr list --state merged` 列本版本区间 PR 与作者；第 6 步验证清单加「外部贡献者致谢检查」；发布完成检查清单加对应确认项。
+- **`config/projects.yaml` / `projects.example.yaml`**：`release_notes.always_include` 新增 `contributor_attribution` 约束键（folia / faropdf 已启用）。
+- **调研补充**：调研来源表新增 eslint（全条目行内作者括注）、stablyai/orca（GitHub 原生 generate-notes：`by @user in #PR` + Contributors 头像墙）；新增 generate-notes API 调用作为漏识别兜底。
+
+### 触发背景
+
+Folia v0.8.1 发布后 Release Notes 整版遗漏外部贡献者致谢——该版三个修复全部源自外部贡献者 @Yillan-lamb（#169 直接合入；#166 / #167 为 #171 / #170 的承接来源），notes 与 CHANGELOG 均无一字提及。
+
 ## [1.4.1] - 2026-08-06
 
 ### 修复
