@@ -4,6 +4,55 @@
 
 ---
 
+## [0.6.6] - 2026-09-24
+
+### 修复
+
+- **导出脚本网络重试加固（重要）**：`star_tracker.py` 全部 14 处裸 `requests.get/put/delete` 改走新增的 `_request_with_retry()` 封装——指数退避重试（2s 起步、60s 封顶、最多 8 次），覆盖网络异常（ProxyError/RemoteDisconnected/Timeout 等）与 429/5xx 状态码，429 尊重 `Retry-After` 头。事故背景：全量导出 673 仓（约 2000+ 次请求）在代理环境下连续两晚失败——首次 HTTP 503 隧道错误（处理到 multica-ai/multica 时）、次次 `RemoteDisconnected`，裸调用一次即崩，长窗口任务必折。修复后全量导出 681 仓一次通过、零失败
+- **导出产物路径不再随 cwd 漂移**：`main.py` 导出 Dashboard 与 config 原写入相对路径 `output/`，从其他目录（如仓库根）启动时产物散落工作区、污染共享仓库（实测：`scripts/output/` 出现 data.js/dashboard.html 两个 untracked 脏文件）；现统一锚定技能自身 `output/` 目录（`StarTracker.CACHE_DIR`，已被 .gitignore 覆盖）。`dashboard_generator.py` 模板查找同步从相对路径改为锚定技能目录，否则非技能根目录启动时永远走简化模板
+
+### 改进
+
+- **对话模块消歧经验扩充（3 条实战模式入 SKILL.md）**：① owner 拼写修正——截图直读 owner 404 时先怀疑 OCR 误读，按 repo 名搜索锁定真身并用星数量级与截图侧栏数字互证（实测 webadderalorg→webadderallorg/Recordly）；② 社交账号名 ↔ GitHub owner 互证——博主昵称与 owner 名的派生关系作中优先级佐证（实测：耳朵→erduo1998-cell、姚老师→yaojingang、文森特→Vincentwei1021）；③ 改名仓库识别——旧名 404 时查 API 301 重定向，返回的 full_name 即新名，已在库则跳过（实测：erduo-hyperframes-broll→erduo-broll-loop-engineering）
+- SKILL.md Dashboard 使用说明同步产物路径变化
+
+---
+
+## [0.6.5] - 2026-09-23
+
+### 改进
+
+- **消歧协议重排（重要）**：证据优先级明确为「来源亲授全称 > 语义比对 > 排除规则 > 版本轨迹」，Star 数量级从第 1 位降为第 5 位仅参考信号、永不单独定论。实测反例：taste-skill 同名的 Leonxlnx 版 8.9 万⭐ 比目标 senlindesign 版（366⭐）高两个数量级，若按旧协议"数量级快筛"会 star 错；实际靠语义比对 + 作者评论区亲授全称锁定
+
+### 新增
+
+- **评论区/回复作为提取源**：作者在评论区亲授的 owner/repo 全称是最高优先级证据，优先于一切启发式消歧
+- **半截 URL 补全策略**：owner 确定而 name 截断（如 `mcncarl/jianyi…`）时，列该 owner 名下仓库按名称前缀 + description 语义匹配补全（实测：jianyi…→jianying-headless，yichen…→yichen-skills）
+- **批量 star 执行模式**：一次内容提取出多个仓库时循环"查重→star→回读"，单仓失败不阻断，最后汇总成功/跳过/失败
+
+### 背景
+
+四连 star 实战（taste-skill、jianying-headless、yichen-skills、hypit）中，数量级启发式首次遇到同名高星反例，暴露 0.6.4 协议的优先级缺陷；同时半截 URL 补全、评论区提取、批量执行三种实战模式均未成文，本次一并固化。
+
+## [0.6.4] - 2026-09-23
+
+### 新增
+
+- **同名候选消歧协议**：社交内容（截图/帖子）常只给项目名，同名候选多为 fork/搬运/衍生项目。对话模块新增四步锚定：Star 数量级判别（原仓库通常高 1–2 个数量级）、图片语义锚定（截图功能场景与候选 description 比对，而非只提取项目名文字）、衍生仓库排除（后缀/自述"基于上游"）、版本交叉核对（内容提到版本号时查 releases/tags）
+- **消歧兜底**：候选无法唯一确定时不凭猜测 star，列出候选与判断依据请用户确认
+
+### 背景
+
+实测两起截图 star 案例（mono-color-skill 3250⭐ vs 0~3⭐ 搬运；native-subtitle-quote-image 795⭐ vs 5/7⭐ 衍生）均依赖上述锚定手法锁定原仓库，但原 SKILL.md 仅有一行"上下文相关性验证"，无可操作判据，本次将实战验证过的协议固化。
+
+## [0.6.3] - 2026-09-23
+
+### 修复
+
+- **对话模块 star 命令在 gh 2.83.0 不可用**：SKILL.md 中 `gh repo star owner/repo` 实际报 `unknown command "star" for "gh repo"`（该子命令并非所有 gh 版本都有），改用 REST API `gh api -X PUT user/starred/owner/repo`，幂等且跨版本可用
+- **star 结果验证语义**：补充检查是否已 star 的响应语义（HTTP 204 = 已 star，404 = 未 star），并要求 star 后以 GET 回读 204 为完成标准，不以 PUT 退出码为准
+- **frontmatter 版本滞后**：SKILL.md version 停留在 0.6.1，与 CHANGELOG 已发布的 0.6.2 脱节，本次一并同步到 0.6.3
+
 ## [0.6.2] - 2026-05-10
 
 ### 修复
