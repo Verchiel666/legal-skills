@@ -34,7 +34,7 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-27 | 更新 | [local-asr](skills/local-asr/) | v2.2.1→v2.3.0 | 复核反例修复：多段长录音关闭声纹提取开关时有向量不再误标 disabled、认领闭环打通；--save-result 覆盖旧文件同样强制 0600；摘要 JSON 补位占位不再假通过、重复发言人拒绝注入，CLI/HTTP 新增质量判定字段；补齐单文件 HTTP/两 CLI 截图端到端证据。 |
+| 2026-09-28 | 更新 | [local-asr](skills/local-asr/) | v2.2.1→v2.3.1 | 复核反例与独立验收余项修复：多段长录音关闭声纹提取开关不再误标 disabled、认领闭环打通；--save-result 覆盖旧文件强制 0600；摘要重复发言人（含空摘要条目）拒绝注入、缺必需章节时 CLI inject 与 verify/HTTP 质量判定一致非零退出；补齐截图端到端证据。 |
 | 2026-09-24 | 更新 | [multi-agent-orchestration](skills/multi-agent-orchestration/) | v2.28.0 | Claude Code auto Worker 的普通 Bash 改由原生 auto 和 settings 判断；编排 hook 保留安装、Orca 协议、tracked 删除及受保护 Git 操作门禁。 |
 | 2026-09-23 | 更新 | [tingwu-asr](skills/tingwu-asr/) | v0.4.7 | 云端转录后的本地摘要注入改用 local-asr 路径，并同步指引与测试。 |
 | 2026-09-23 | 更新 | [douyin-batch-download](skills/douyin-batch-download/) | v1.8.1 | 更新本地转录技能链接为 local-asr。 |
@@ -575,15 +575,6 @@
 <td></td>
 </tr>
 <tr>
-<td><a href="skills/workbuddy-checkin/"><strong>workbuddy-checkin</strong></a></td>
-<td>工具·签到</td>
-<td style="word-break:break-word">WorkBuddy 每日积分自动签到：自动解密本地登录令牌调用官方签到 API，支持连续签到与补签窗口</td>
-<td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.0.5</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.21/workbuddy-checkin-1.0.5.zip">下载</a></td>
-<td></td>
-</tr>
-<tr>
 <td><a href="skills/invoice-organizer/"><strong>invoice-organizer</strong></a></td>
 <td>通用·报销整理</td>
 <td style="word-break:break-word">整理一批发票/票据 PDF（增值税普通发票、铁路电子客票、住宿交通餐饮等），按购买方抬头匹配所属案件项目，向上回溯读取项目上下文自动填补事由，复制归档（原件不动）并出具报销清单（可切换消费清单/对账流水）</td>
@@ -594,6 +585,8 @@
 </tr>
 </tbody>
 </table>
+
+> **已下架：workbuddy-checkin（2026-09-28）**：WorkBuddy 官方自 v5.6.2 起对本地登录态启用信封加密等技术保护措施，继续维护解密链路并公开分发的合规风险显著上升，经评估下架该技能并停止公开分发，历史版本不再提供下载。
 
 ### 🔧 开发工具
 
