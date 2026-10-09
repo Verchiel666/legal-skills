@@ -1,3 +1,33 @@
+# Shared native classifier for metadata and launch. A memory profile only
+# permits the exact late guard, freshly reproduced from the frozen binding.
+minimax_verified_startup_mode() {
+    local minimax_native_command="$COMMAND"
+    if [ -n "${MEMORY_TASK_PROFILE:-}" ]; then
+      # A memory profile alone never proves an arbitrary Python wrapper. Only
+      # the exact late render output is accepted, then freshly reproduce it
+      # from the same original native argv, outer env, binding and Git pregate.
+      if [ -z "${MEMORY_TASK_RENDERED_COMMAND:-}" ] || [ "$COMMAND" != "$MEMORY_TASK_RENDERED_COMMAND" ] \
+          || [ -z "${MEMORY_TASK_RENDER_OUTER_COMMAND:-}" ] || [ -z "${MEMORY_TASK_BINDING_B64:-}" ] \
+          || [ -z "${MEMORY_TASK_ORIGINAL_COMMAND:-}" ]; then
+        echo "MINIMAX_MEMORY_LAUNCH_GUARD_MISMATCH: final command is not the bound late render" >&2
+        return 64
+      fi
+      local reproduced_guard
+      reproduced_guard=$(python3 "$SCRIPT_DIR/memory_task_admission.py" render-launch \
+        --profile "$MEMORY_TASK_PROFILE" --command "$MEMORY_TASK_ORIGINAL_COMMAND" \
+        --backend "$WORKER_BACKEND_CANONICAL" --binding-b64 "$MEMORY_TASK_BINDING_B64" \
+        --outer-command "$MEMORY_TASK_RENDER_OUTER_COMMAND" --execution-cwd "$WORKTREE" \
+        --pregate-branch "${pregate_branch:-}" --pregate-head "${pregate_head:-}" \
+        --pregate-common "${pregate_common:-}") || return 64
+      if [ "$reproduced_guard" != "$COMMAND" ]; then
+        echo "MINIMAX_MEMORY_LAUNCH_GUARD_MISMATCH: fresh binding/render differs" >&2
+        return 64
+      fi
+      minimax_native_command="$MEMORY_TASK_ORIGINAL_COMMAND"
+    fi
+    python3 "$SCRIPT_DIR/minimax-cli-startup.py" --command "$minimax_native_command" --require-input --supervised "${ORCA_SUPERVISED:-0}" --task-id "${ORCA_TASK_ID:-}"
+}
+
 #!/usr/bin/env bash
 # spawn-worker-metadata.sh — Session Context metadata writer for spawn-worker.sh.
 # This file is sourced after spawn-worker.sh initializes runtime and authority globals.
@@ -31,6 +61,20 @@ metadata_array_to_json() {
 
 write_metadata() {
   local enforcement_source worker_mirror_authoritative orca_setup_mode_value
+  local minimax_startup_mode="" minimax_input_source=""
+  if [ "${WORKER_BACKEND_CANONICAL:-}" = "minimax-code" ]; then
+    minimax_startup_mode=$(minimax_verified_startup_mode) || return 64
+    if [ "$minimax_startup_mode" = "batch" ]; then
+      minimax_input_source="command_bootstrap"
+      ORCA_TUI_READY_METHOD="command_bootstrap_no_tui_wait"
+      if [ "${ORCA_SUPERVISED:-0}" -eq 1 ] || [ -n "${ORCA_TASK_ID:-}" ]; then
+        echo "MINIMAX_BATCH_REQUIRES_TERMINAL_MANAGED" >&2; return 64
+      fi
+    else
+      minimax_input_source="native_interactive"
+      ORCA_TUI_READY_METHOD="orca_terminal_wait_tui-idle"
+    fi
+  fi
   created_at=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
   if [ "${#VERIFY_COMMANDS[@]}" -gt 0 ]; then
     verify_json=$(printf '%s\n' "${VERIFY_COMMANDS[@]}" | jq -R . | jq -s .)
@@ -63,6 +107,11 @@ write_metadata() {
   fi
 
   jq -n \
+    --arg borrowed_contract "${BORROW_EXISTING_WORKTREE:-}" \
+    --arg borrowed_sha "${BORROWED_CONTRACT_SHA256:-}" \
+    --argjson borrowed_owner_pid "$$" \
+    --arg minimax_startup_mode "$minimax_startup_mode" \
+    --arg minimax_input_source "$minimax_input_source" \
     --arg schema "multi-agent-orchestration.worktree-metadata.v1" \
     --arg created_at "$created_at" \
     --arg project "$PROJECT_DIR" \
@@ -74,6 +123,7 @@ write_metadata() {
     --arg session "$SESSION" \
     --arg session_context "$SESSION_CONTEXT" \
     --arg command "$COMMAND" \
+    --argjson dispatch_profile "${DISPATCH_PROFILE_JSON:-null}" \
     --arg worker_backend "$WORKER_BACKEND" \
     --arg pm_harness "$PM_HARNESS" \
     --arg pm_harness_source "$PM_HARNESS_SOURCE" \
@@ -165,6 +215,7 @@ write_metadata() {
         }
       },
       runtime: {
+        dispatch_profile: $dispatch_profile,
         harness_authority: {
           pm_harness: $pm_harness,
           evidence_source: $pm_harness_source,
@@ -247,5 +298,11 @@ write_metadata() {
         url: "",
         state: ""
       }
-    }' > "$METADATA_FILE"
+    } | if $minimax_startup_mode != "" then
+      .runtime.startup = {mode:$minimax_startup_mode,task_input_source:$minimax_input_source,observation:"not_observed",completion_authority:"checkpoint_and_pm_acceptance"}
+      else . end
+      | if $borrowed_contract != "" then
+      .worktree_ownership = "borrowed"
+      | .borrowed_worktree = {contract_file:$borrowed_contract,contract_sha256:$borrowed_sha,lock_owner_pid:$borrowed_owner_pid}
+      else . end' > "$METADATA_FILE"
 }

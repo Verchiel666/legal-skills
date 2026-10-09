@@ -1,6 +1,6 @@
 # gh CLI 常用命令速查
 
-基于 GitHub CLI (`gh`) 的常用操作参考。
+按需查询 GitHub CLI (`gh`) 参数。只读命令可用于核查；review、Issue 写入、关闭、更新分支与远端操作须有对应授权。PR 与发布的安全规则由场景合同维护，速查不构成额外授权。
 
 ## 认证
 
@@ -13,10 +13,7 @@ gh auth status         # 查看认证状态
 
 ### 创建
 
-```bash
-gh pr create --title "feat(module): 描述" --body "正文"
-gh pr create --draft   # 创建为草稿
-```
+发布按主Skill身份/隐私门执行；先 safe-push.sh，再 safe-pr.py create，提供实际base/head、完整expected-head及最终标题/正文文件。默认draft，创建后核真实元数据。不要用裸gh pr create或--fill替代发表预检，完整命令见[隐私预检](privacy-preflight.md)。
 
 ### 查看
 
@@ -39,24 +36,7 @@ gh pr review <number> --comment --body "评论"
 
 ### 合并
 
-合并前先检查 PR 状态、diff 和 checks：
-
-```bash
-gh pr view <number> --json title,state,isDraft,mergeable,reviewDecision,headRefName,baseRefName
-gh pr diff <number> --name-only
-gh pr diff <number> --stat
-gh pr checks <number>
-```
-
-diff 不可读、checks 未知、review 不明确、PR 是 draft、mergeable 不明确或 diff 超范围时，不要 merge。
-
-PR 正文缺少 Summary、Test plan、Agent Attribution 或 Issue/Task 关联时，先要求补齐。Monorepo PR 如果出现跨目录污染、大量删除、敏感配置或版本清单不一致，不要 merge。
-
-```bash
-gh pr merge <number> --squash        # Squash merge
-gh pr merge <number> --merge         # Merge commit
-gh pr merge <number> --rebase        # Rebase merge
-```
+读取[PR 合同](pr-workflow.md)满足范围、review、最终 checks 和授权后，按[隐私预检](privacy-preflight.md)使用 safe-pr.py，绑定完整受审 head 与最终说明；合并后核实际回执。不要裸 merge 或 admin override。
 
 ### 其他
 
@@ -104,10 +84,11 @@ gh repo fork <owner>/<repo>           # Fork
 
 ## Release
 
+发版与上传资产读取 release-workflow，不由速查触发发布。只读查询：
+
 ```bash
-gh release create v1.0.0 --title "v1.0.0" --notes "发布说明"
 gh release list
-gh release download v1.0.0
+gh release view '<tag>'
 ```
 
 ## Actions

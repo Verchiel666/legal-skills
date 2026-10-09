@@ -1,5 +1,237 @@
 # Changelog
 
+## [2.36.8] - 2026-10-04
+
+### 修复
+- 将已独审的派发准入、业务产物内容验收、共享 worker 库存与具名任务内存 profile 整合到当前公开基线；保留既有 GUI 只读证据链和工程验证证据采集。
+- 持续 Wave 在资源创建前检查原 PM 监测配置；配置就绪仍不代表自动独审、写回和续派已经完成。
+
+### 新增
+- 原失败 ZCode Task 的关闭恢复诊断与受约束恢复入口进入公开基线。当前原生身份缺口继续阻断真实恢复，诊断结果固定不能 retry；不重置原失败历史或业务预算。
+
+### 技术优化
+- 既有 Linux 路径兼容和权限断言修复与当前 GUI、验证证据及内存完整 spawn CI 串行组合；本版本不改变未发布 GUI 调度合同，也不降低全局默认内存预算。
+- 诊断标题改写测试等待自有 Node 夹具安装信号处理器后再发送信号，消除 exec 已完成但模块未初始化的竞态；生产恢复与超时合同保持原样。
+- 更新既有安装 guard 的合法完成回执夹具，显式声明活跃 Dispatch 状态并补 failed/unknown 拒绝消费者；不放宽生产完成权限。
+
+### 待办事项
+- 原生关闭 Session 的真实业务恢复、持续自治与完整 worker 实测容量继续由原任务验收；参考精简 PR251 仍需其 GUI 引用发布后单独验收。
+
+## [2.36.7] - 2026-10-03
+
+### 新增
+- 集成只读 GUI collector→adapter→observe、校验分块产物与 Git bundle 消费者七个既有已独审候选；保持默认投递/监督/权限与资源规则，READY仅是待PM审查证据。
+- 新增三项缺省同目录消费者，核无依赖环境变量/显式路径时的完成、末条错误、错绑拒绝、DB字节不变与元数据无泄漏；CI串行真实执行GUI组件与消费者，明确保留可选旧稿负控及不适用缺依赖场景的跳过。
+- 沿 PR261 收录 ZCode GUI 远端作者直发 PR 合同（`references/38-zcode-gui-remote-pr.md`）：官方 GUI 模型内核与开源 CLI 分离、localhost 优先与官方远控跨机同页面操作逻辑、Start Plan/150% 权益真人确认与 provider 实测分列；固化“作者自测→固定 head→不同 SID 独审→原 session 返修→fresh 身份/唯一性→safe-push→唯一 draft PR→PM 从 GitHub 只读核验”发布链，含通道故障 fresh 核查、禁传凭证/禁改账号/禁关 TLS 验证与官方登录真人依赖标注；已验来源具名 PR257/PR258（两作者不同 GUI SID 交叉独审 ACCEPT、未 merge），SKILL 按需读取地图挂最小入口。
+
+### 文档完善
+- 按需读取地图补齐已采用的操作合同；云端PR池与main加GUI长期功能线的任务/决策记录归TASKS和DECISIONS，不新增规划reference。
+
+### 待办事项
+- 原生ZCode恢复、GUI自动投递/持续监测/Orca正式监督及长期稳定性仍未验收；核心PR248与参考精简PR251分别处理冲突和未发布依赖。
+- 浏览器 driver 脚本自动新投递与长时全自动稳定仍 NOT_VERIFIED（PR261 维护记录保留）。
+
+## [2.36.6] - 2026-10-02
+
+### 新增
+- 新增只读 ZCode 会话证据采集器 `scripts/zcode-session-evidence.py`（Python 3.9+ 标准库，零依赖）：以 mode=ro URI + query_only + 单事务快照打开既有 SQLite，绝不创建或写原生 DB；必填 `--db/--session-id/--input-id`，可选 `--include-final-text`；精确绑定 `session_input.id + session_id` 并经 `promoted_message_id` 关联 `turn_usage.user_message_id`，绑定或 turn 多匹配一律拒歧义；输出稳定 JSON，区分 input admitted/promoted/failed、turn 缺失/running/completed/error/cancelled 与完成证据——精确 turn completed 加 sequence 最新 assistant（原生 `parentID` 绑定）`time.completed` 非空、无 error 且含非空 text，不从较早成功 assistant 拾取覆盖最新 error/未完成/无 text；providerId/modelId/mode 只取该 assistant 原生 message，缺项显式 unknown，不回落其他会话或默认套餐。
+- 默认仅输出元数据与最终文本长度，只有 `--include-final-text` 才携带最终 assistant 文本；任何模式下不输出 reasoning、tool 输入/输出、`session_input.payload`、认证参数、完整 DB 路径或其他会话数据，错误输出清楚 JSON 且非零退出，不抛泄密 traceback。冷 DB 不是实时活性权威，缺项绝不推导 idle 或完成。
+- 新增回归 `scripts/test-zcode-session-evidence.py`：合成 SQLite fixture 走真实 CLI 子进程，覆盖两身份错绑、同 input 多 turn、admitted/failed/缺 turn、completed/最后 assistant error/未完成/无 text（含较早成功不得覆盖）、provider 缺项、schema/JSON 错误、text 显式开关、敏感内容不泄露、缺 DB 不创建与原 DB 字节不变。
+- 新增用法与合同说明 `references/zcode-session-evidence.md`，并在 SKILL.md 按需读取地图挂链接。
+
+### 修复
+- 独审 REJECT R1（F1/F2）：`session_input.status_reason` 原生自由文本不再进入输出，仅输出 `reasonPresent` 布尔（内容永不外发）；同一 promoted 消息下候选 assistant 的最大 sequence 并列、缺失（NULL）或非数值时输出 `ASSISTANT_AMBIGUOUS` 拒歧义，绝不按行序任意挑选。补对抗性 status_reason（路径/凭证样例）与 sequence 并列（旧失败/新成功双向插入序）、NULL、非数值真实 CLI 回归，回归 23→27 项。
+
+### 待办事项
+- 本 PR 不实现 Orca 监督适配；真实大库性能与长期稳定性 NOT_VERIFIED，沿 GUI 任务监控方向另行立项。R1 修复后实现完成但 PM 审查/PR 验收尚待（IN_REVIEW）。
+
+## [2.34.6] - 2026-10-03
+
+### 新增
+- 工程验证证据的可选采集与复核入口，实际执行原任务合同的简单验证命令，记录退出码、有界日志与耗时；绑定原合同、提交和实际源码，变化后拒绝复用旧证据。
+
+### 改进
+- 复用现有交付后门的证据格式，减少手工转抄；采集结果继续由原独立审查和验收门消费，不生成审查通过或任务完成结论。
+
+## [2.34.5] - 2026-10-03
+
+### 修复
+- 记录关闭恢复的真实消费者身份缺口：原生ZCode改写title/argv，Orca公开终端未报告agentIdentity，当前版本组合不能由旧核验假设证明；恢复合同明确保持不就绪，既有关闭意图保留。
+
+### 新增
+- 已启动恢复意图的只读`diagnose`入口，核原绑定、当前owner及模型并分类终端/进程证明缺口；固定不可retry结论，保留原verify和防重放要求，便于原PM对账。
+
+## [2.34.4] - 2026-10-03
+
+### 修复
+- `reauthorize`在资源或授权写入前核精确live事实，拒绝failed/process_exited和未知目标，避免把关闭任务按旧launch裸重启。
+
+### 新增
+- ZCode原失败Task的关闭Session恢复与单次retry入口：先核历史attempt及退出事实，以空输入恢复精确原生Session并核模型，再采用真实新Dispatch的完成凭据与路由；原首次启动防重放保持。
+- 恢复前后只读核原生持久Session的worktree、权限和provider/model/effort；不修改全局账户配置，不重置业务失败预算。真实DSH恢复与业务闭环需由原PM实际验收。
+
+### 技术优化
+- 完成凭据Shell测试改为跨平台读取实际文件mode，仍断言600且拒绝更宽权限；修复GNU stat的输出污染误报。
+- 修正原首次启动桥的系统别名处理：仅macOS将`/tmp`、`/var`转换到`/private`，Linux保留真实路径；符号链接拒绝及原防重放不变。
+- 新恢复入口定向测试及不同上下文消费者复审通过，覆盖真实UUID透传、矛盾身份拒绝和中断采用恢复；首次失败与独审拒绝保留。实际原任务业务恢复与长期运行仍待验，不以模拟或只读模型证据替代。
+
+## [2.34.3] - 2026-10-03
+
+### 修复
+- 合法研究、设计、文书与报告可采用业务产物合同派发和验收，消除必须伪装为工程 diff 或 Git 提交的误拒；维护调查扩波仍须满足原价值要求。
+
+### 改进
+- 并发默认值提供同源只读输出；显式共享库存和项目较小上限可共同参与准入，未提供库存时明确只验证本波数量，消除文档与代码口径冲突。
+
+### 新增
+- 显式任务资源 profile 接入共享内存门，限定 MiniMax CLI 保留至少 3 GiB 预算和稳定观察窗；完整启动链复核原命令、安装、输入与工作树身份。旧默认资源策略保持。
+- 只读生成实际文件清单与交付指纹；内容审查和真实命令验证两种模式均绑定独立角色、来源及逐项标准。支持非 Git 目录和常见文本、图片、PDF、Office 产物。
+- 业务文件消费者与旧工程门禁回归接入既有 CI，门禁不代替业务内容、来源真实性或文件渲染审查。
+
+### 技术优化
+- 资源CI使用字节校验后的私有Node副本并隔离setup-python的库路径，保留生产文件权限与环境校验；缺少MiniMax安装时仅现场只读探针明确标记未验，其余隔离消费者继续执行。
+
+### 验证
+- 三单元限定独审通过；维护矩阵71条首次通过，第59消息套件超时后原代码单例及9项整套有限复验通过，首失败与未确认根因保留。真实安装绑定通过；现场资源稳定窗拒绝，未启动模型任务。
+- 未新增高危或hard静态项，基线审计告警仍保留；本轮不声明长期自治、整worker RSS或跨PM原子预留通过。
+
+## [2.34.2] - 2026-10-02
+
+### 修复
+- 身份观测失败保留超时、不可用、IO和坏数据分类；只有成功观测到不符才报告身份漂移。所有失败继续阻断，不提高生产超时。
+- 只读Orca smoke改用每轮私有测试身份，并与生产工作树路径映射一致，避免撞到历史测试树；既有占用拒绝和只读边界保留。
+- 修正持续推进文案：单依赖链泊车或暂时无合法READY不停止整个项目监测；真人催促后的恢复明确记为人工恢复，不能追认为自动自愈。
+- 修正既有监测回归的固定2.6秒等待，改为有上限地核三轮真实循环完成，再断言恢复/去重；不改变生产监测周期。
+
+### 新增
+- 准备门、Wave与监测fixture接入既有CI；监测未达轮次或计数异常明确失败。
+- 显式continuous Wave在任何Orca调用前只读核验现有Codex heartbeat的原PM、精确任务源、启用状态和周期；不就绪时拒绝创建资源。旧单波入口保留兼容。
+
+### 验证边界
+- 新smoke回归使用私有Orca与进程祖先输入来隔离环境，仍执行真实spawn；定向通过不等于实机宿主身份或Orca完整生命周期通过。
+- 配置准备通过只表示CONFIGURED_NOT_PROVEN_AUTONOMOUS；不产生授权、不创建定时任务，不证明实际自动独审/写回/续派或跨会话稳定性。验证证据与剩余Task-067/068见TASKS中的CONTINUATION-READINESS卡。
+
+## [2.34.1] - 2026-10-02
+
+### 修复
+- 识别 macOS 实际 `System-wide memory free percentage` 输出，作为独立报告百分比；区分读取成功与解析有效，不将该百分比推成可用物理内存或压力级别。
+
+### 改进
+- 分开记录内核原生压力通知位和既有算法的合成压力来源。内核信号仅供观测，原 swap 阈值、预算、保留公式、slots 与退出语义保持。
+
+### 验证
+- 新遥测13项与原内存58项首轮通过；三个冻结现场样本解析成功且仍exit3/slots0，无vm_stat与只有新百分比时仍exit1。独立39组/78次CLI对照保持旧输出与退出语义，维护矩阵66项通过（两同字节套件复用首轮证据）。原始采集器错误、快照空格例外与旧静态告警保留；长期稳定性未验证。
+
+## [2.34.0] - 2026-10-02
+
+### 新增
+- backend、真实命令启动模式与Orca/direct通道统一解析为派发profile，实际spawn消费同一合同；从个人配置与命令参数记录并发、请求权限和来源，观测权限单独保留未知。
+
+### 改进
+- 已指定ZCode时，auto默认采用已配置的原生Orca supervised桥；缺失/禁用配置在资源副作用前拒绝，旧显式native参数保留，generic兼容须显式选择。MiniMax按原验证器区分batch与交互，不改命令或共享配置。
+- 启动后的指引按模式生成唯一下一动作，不再统一建议发送任务；已校验的官方worker-show projection优先，composer残留、TUI idle和启动返回不冒称已开始或完成。
+
+### 验证
+- 新隔离默认原生入口实际使用CodingPlan/GLM-5.3/max完成文件任务，PM2/2、唯一worker_done/Delivery、自动release与ack通过；该链绑定首候选，修后head的兼容/回执消费者和独审另行记录。缺schema旧配置误拒与已完成回执遗漏spawn动作两反例沿原session修，原失败保留；完整Skill及长期稳定性仍NOT_VERIFIED。
+
+## [2.33.2] - 2026-10-02
+
+### 修复
+- MiniMax terminal-managed 的原生 `exec` 按实际 CLI 参数识别批处理启动，保存准确终端身份后跳过 TUI 等待和重复任务输入；交互 CLI 保持就绪检查与唯一输入，批处理不能充当 supervised Task/Dispatch。
+
+### 验证
+- 真实执行bootstrap的控制器消费者证明旧实现执行一次后仍wait64、候选0且零二次send；Orca281、metadata33通过。独审另发现单引号展开与env exec误判，按真实Shell参数和退出码返修，原拒绝证据保留；完整回归及修复后独审由PM继续核对。
+- 独立Orca原生MiniMax canary仅一次bootstrap，Run succeeded/exit0/shutdownComplete，实际M3.1Flash与probe.py一致，PM1/1通过、原生配置SHA未变、最终测试终端库存0。该canary运行在首轮候选，不能替代修复后命令语义复验或长期稳定性证明。
+
+### 文档完善
+- 明确 ZCode 原生 Orca 启动桥与通用终端入口的区别；保留原 Task、启动回执和残余资源，失败后先读取实际进度再恢复，不重发已有业务。
+
+## [2.33.1] - 2026-10-02
+
+### 改进
+- 新隔离ZCode worker的renderer和无command启动入口默认yolo，显式build/edit/plan保留；MiniMax batch默认原生full，显式smart/off保留。长程MiniMax继续使用交互CLI，权限读取既有原生配置；本机已full，不添加不存在的TUI启动参数或修改全局配置。
+
+### 修复
+- 兼容Orca官方worker-list的scope.run，避免已释放worker被误报为malformed page而保留provider lease。所有run/runId/run_id别名仍需一致、非空且匹配请求，分页和Dispatch唯一性继续失败关闭。
+
+### 验证
+- 实际ZCode交互CLI通过renderer默认命令启动，原生/mode明确读回yolo；无模型请求。MiniMax本机官方配置loader读回bypassPermissions，实际原生TUI的/permission显示Current · Full access且配置字节未变。参数消费者覆盖默认与显式收紧，Orca两个已释放worker的真实只读库存消费者通过，旧版对同库存复现拒绝。
+- 原业务provider lease未由本轮直接结算；不得把只读库存兼容证明扩大为实际release已完成。不把历史build业务验收改记为yolo长程业务验证，不声称所有可选backend或长期指令稳定性已验。
+
+## [2.33.0] - 2026-10-01
+
+### 新增
+- 提供显式借用预建 long-lived 工作树的首次原生 ZCode 接入合同，绑定 Git/Orca 身份、快照、唯一 writer 与独占锁；保持默认拒绝已有树，失败和编排清理保留原分支、工作树与批准资产。
+
+### 改进
+- 显式选择 MiniMax Code 后默认通过 Orca terminal-managed 派发，统一显示工作树、分支和终端；Orca 不可用时失败关闭，保留 `--no-orca-mode` 显式直连，不扩张日常 backend 池。
+
+### 验证
+- 冻结候选完成62项维护命令；53个借用fixture与独立消费者关闭旧helper替换、未知writer漏检问题。可信扫描原始high/hard信号保留，以真实消费者及PM限定能力复核说明上下文，正式Harness证据门通过；不声称长期指令稳定性已验。
+- MiniMax默认Orca真实交互CLI完成独立probe文件任务，PM3/3测试与value postflight通过；同一会话16条assistant模型响应与16条HTTP200事件均为MiniMax-M3.1-Flash-Preview。原生usage精确组合绑定、日志同session/turn/model数量组复核，未证明逐responseId的HTTP直连或精确计费。
+- 本轮Mcode/launcher及基线后代确认退出，默认残余shell逐项核对后正式close-all，终端库存为0；long-lived测试树与分支按合同保留证据。MiniMaxsupervised Task/Dispatch仍未支持。
+- 本机借用入口完整cwd库存依赖未满足，真实borrowed-native启动/结算NOT_VERIFIED并泊车；不放宽未知拒绝，不把fixture通过推广到现有业务树。
+
+
+## [2.32.0] - 2026-10-01
+
+### 新增
+- 为用户指定的 ZCode CLI 提供显式原生 Orca supervised 路径：使用 1.4.218 起的首次 composer 等待与唯一 Task 投递，保持交互 CLI 和既有启动环境。
+- 增加 owner-only、短时、单次启动请求桥及原生回执核对，绑定 Session Context、authority、工作树、runtime 与启动脚本；核对启动 created 与结算时 live ownership，尊重用户接管保护。
+
+### 文档完善
+- 补充原生启动、默认 ZCode 回退、模型操作、版本与权限边界；保留可选后端不进默认池、账号规则由本地私有 Skill 提供的合同。明确单worker的build/edit/plan/yolo配置与CLI审批接续，不改全局权限、不重发已投递Task。
+
+### 验证
+- 完整维护矩阵61/61命令通过，独立审查关闭重放与nonready两个阻塞；真实Orca原生同会话完成Flash阶段35项测试、切换GLM-5.3及3项定向反例、唯一worker_done succeeded与Delivery验收。release返回用户接管保护retained，随后ack通过；用户明确授权后两条测试终端关闭与退出确认，研究认证副本精确删除、日志与证据保留，本轮临时资源已收口。coordinator-owned自动关闭仍未验证；不将人工关闭当作自动release。
+
+## [2.31.3] - 2026-10-01
+
+### 修复
+- 正确消费原生 Orca 的未满足退出码：仅严格有效的 `ok=true / satisfied=false` 配合退出1可同句柄有界重等；退出1却宣称就绪、其他非0退出及异常回执均停止，保留资源并保持零投递。
+
+### 验证
+- 增加原生 CLI handler 的隔离契约回放及真实 shell 退出码消费者回归，覆盖普通/supervised、错绑、多JSON、timeout/stale错误；不扩大为 ZCode Orca 或完整生命周期的真机验收。
+- 公开文档仅维护私有账号 Skill 的版本感知调用合同；真实私有运行与安装证据由私有Skill维护，不在公开任务卡承载。
+- ZCode同一原生tmux交互会话完成代码/256项回归及refs合同两阶段，RESULT ACCEPT、STATUS done、tracked diff为0、value postflight通过；原生记录确认实际 `GLM-5.3-Flash` 与切换后的 `GLM-5.3` 请求完成、重试无异常。仍为prompt-only，目录枚举越scope已记录，机械scope、Orca TUI及精确计费未验证。
+
+### 文档完善
+- 补充私有账号 Skill 的版本感知派发前校验调用：具名观测/计划、现场重读、失败停止，瞬时通过不当持续身份锁；保留公开包仅由PM调用的边界。
+- 明确已验ZCode tmux交互路径与尚未验证的Orca TUI就绪边界，避免将终端可写、composer或hook安装状态扩大为兼容成功。
+
+## [2.31.2] - 2026-10-01
+
+### 修复
+- Orca worker 启动仅在明确的 `ok=true` / `wait.satisfied=true` 回执后投递；超时同句柄有界重等一次，异常或仍未就绪则失败并保留精确终端/工作树供恢复，supervised 仍只由 worker-start 注入任务。
+
+### 验证
+- MiniMax Code 的真实 Orca terminal-managed 文件任务已独立验收，PM 的3项测试通过；15条原生响应记录确认实际 minimax / MiniMax-M3.1-Flash-Preview，任务结束后终端关闭。
+- ZCode tmux fallback 的个人 Coding Plan / GLM-5.3-Flash 文件任务已有13条 completed 记录、0 retry和3项测试通过，独立产物验收 `ACCEPT`（限tmux实际任务）；临时研究副本删除、tmux关闭。Orca 两次 terminal_handle_stale 且0业务send，Orca/supervised/settlement及机械scope/hook仍 `NOT_VERIFIED`；共享原件哈希仅进程内断言，独立before/after重放未验证。
+
+## [2.31.1] - 2026-10-01
+
+### 新增
+- 提供默认关闭的本地账号调度 Skill 调用合同；账号、额度和刷新卡实现保留于独立私人 Skill，公开包仅说明 PM 调用及失败停止边界，不自动执行账号切换。
+
+### 修复
+- 修正 Hermes 环境探针在已识别 Codex 宿主下误报失败，以及 tmux smoke 重建同一 fixture 时截空 policy 的问题；保留生产门禁与隔离 socket。
+
+
+## [2.31.0] - 2026-09-30
+
+### 新增
+- 重点新增独立 ZCode CLI（`zcode-cli`）和 MiniMax Code CLI（`minimax-code`/`mcode`）的交互/batch 命令、身份检查与依赖入口；原生参数按本机帮助核对，不误套 Claude Code flags。
+- 新增独立 Qoder CN（`qoder-cn`）与千问办公 bundled coding（`qwenwork-cn`）按需入口；同名 qoderclicn 按实路径区分，千问配置目录显式绑定，原生办公 tools 单独说明。
+
+### 改进
+- 保留 CodeBuddy，移除 QoderWork backend/别名与旧 helper 的启动能力；拒绝旧 bundle/软链伪装成 Qoder CN。
+- 明确能力支持不等于默认派发：以上可选 backend 不加入日常 Claude Code/Codex 池或 quota 默认链，只在用户指定时选择；新 worker 能力不增加 PM host。
+- 新 CLI 未集成编排 hook，必须显式声明 prompt-only 降级；不自动接受未验证 dialog，模型/权限选项错误明确拒绝。
+
+### 验证
+- 原生 ZCode TUI 的个人 Coding Plan 模型列表与切换、GLM-5.3/Flash 各一次真实请求及服务端 Pro 套餐/额度已核对；记录 CLI 账号关联与 app-server 宿主权限区别、缺 reasoning 导致静默回落的行为。逐请求积分扣分和完整 Orca 生命周期仍未验证，见 ref 28 与 TASKS。
+- CLI 帮助与隔离 argv、正反身份/策略用例及维护回归结果记录在 TASKS 的 OPTIONAL-CLI-BACKENDS 卡。帮助/隔离 stub 不能证明 provider 或 supervised 生命周期；未验证范围保持 `NOT_VERIFIED`。
+
 ## [2.30.5] - 2026-09-29
 
 ### 新增（修正"远程终端没有真实推进"）

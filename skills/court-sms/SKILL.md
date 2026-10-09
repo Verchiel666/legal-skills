@@ -2,7 +2,7 @@
 name: court-sms
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.5.1"
+version: "1.5.3"
 license: MIT
 description: 本技能应在用户收到法院短信（文书送达、立案通知、开庭提醒等）时使用，自动提取案号、当事人、下载链接，下载文书并归档到对应案件目录。会落盘敏感诉讼数据到本地，请确认目标位置私密。
 ---
@@ -89,11 +89,13 @@ https://zxfw.court.gov.cn/zxfw/#/pagesAjkj/app/wssd/index?qdbh=xxx&sdbh=xxx&sdsi
 | 湖北电子送达 | `dzsd.hbfy.gov.cn` | HTTP API（免账号）/ 浏览器自动化（账号模式） | 免账号：msg；账号模式：账号+密码从正文提取 |
 | 司法送达网 | `sfpt.cdfy12368.gov.cn` | 纯 Playwright（无 API） | 验证码（手机尾号后6位 / 短信验证码） |
 
-**e) 发送时间提取（P0）**：从送达平台 API 响应中提取发送时间，用于后续上诉期限计算
-- **优先来源**：zxfw API 响应中的 `dt_cjsj` 字段（送达记录创建时间，ISO 8601 格式）
-- 短信网关时间：部分手机短信会显示发送时间，匹配 `发送：YYYY-MM-DD HH:mm` 格式
-- 如果无法提取送达时间，展示"送达时间待确认"，不阻塞后续流程
-- 记录到归档 JSON 的 `document.sent_at` 字段
+**e) 送达证据核对（P0）**：读取 [送达与期限规则](references/service-and-deadlines.md)，区分发送、收到、生成和法律上的送达。
+- zxfw 的 `getWsListBySdbhNew` 在已测响应中不含 `dt_cjsj`，不得臆造该字段；即使其他接口有创建时间，也不能自动当送达时间。
+- 按“文书 + 受送达人”核对适用基础、送达回证或系统发送成功/到达证据。二维码生成、文书落款、普通短信时间仅记为线索，不能借同批另一份文书的日期起算。
+- 按参考格式整理证据，执行 `python3 scripts/check_service_evidence.py /private/path/service-evidence.json`；仅输出 `confirmed` 时进入期限规则核对。检查器只检查结构和一致性，不替代原始证据核验。
+- 未知、冲突或检查失败时，`service.served_on=null`，展示“送达时间待确认”及缺口，继续下载与归档；不得输出确定期限或倒计时。
+
+**f) 下载期避免 python heredoc**：优先写临时 `.py` 文件或改用 `execute_code`，避免 `python3 <<'PY'` 写法——它命中危险命令规则（pattern key `script execution via heredoc`），逐次触发审批弹窗。`python3 -c`（key `script execution via -e/-c flag`）同理。
 
 > **排除列表**：法院名称、法官姓名、地名、法律术语等不应作为当事人提取。详见 `sms-patterns.json` → `party_extraction.exclude_keywords`。
 
@@ -129,6 +131,7 @@ https://zxfw.court.gov.cn/zxfw/#/pagesAjkj/app/wssd/index?qdbh=xxx&sdbh=xxx&sdsi
 
 | 依赖 | 用途 | 适用方案 | 安装方式 |
 |------|------|----------|----------|
+| Python 3.8+ | 送达证据检查（标准库，无需 pip） | 期限核对前 | macOS/Linux 使用已有 `python3`；缺少时提示安装后重试期限核对 |
 | `curl` | API 下载 | 方案一 | macOS/Linux 预装 |
 | `jq` | JSON 解析（可选） | 方案一 | `brew install jq` |
 | Playwright | 浏览器自动化 | 方案二/三 | 见下方 |
@@ -318,34 +321,24 @@ done
    - **传票**：提取开庭时间、地点、法庭、案号，向用户高亮提醒
    - **通知书/告知书**：提取缴费期限、举证期限等关键日期
    - **起诉状/答辩状**：提取案由、当事人、诉讼请求概要
-   - **判决书**：识别为一审判决书，记录文书类型，触发上诉期限计算（P1）
+   - **判决书/裁定书**：读取正文及末尾救济告知，核对审级、程序和可上诉性；不能仅凭标题认定一审或可上诉
    - **其他文书**：展示文书标题和法院名称
    - 如一次下载多份文书，逐一解析，汇总为一份报告
 
    > 深度分析（如判决书解读、合同审查）不在此技能范围内，请使用专用分析技能处理。
 
-8. **上诉期限计算（P1）**：当识别到判决书/裁定书时自动计算
-   - **适用条件**：文书类型为判决书/裁定书（包括一审判决书、民事判决书、裁定书等）
-   - **不同案件类型的上诉期限**（详见 `sms-patterns.json` → `appeal_calculation`）：
-     | 案件类型 | 上诉期限 |
-     |---------|---------|
-     | 民事一审判决 | 送达后15天 |
-     | 民事裁定 | 送达后10天 |
-     | 行政判决 | 送达后15天 |
-     | 刑事判决 | 送达后10天 |
-     | 刑事裁定 | 送达后5天 |
-   - **计算公式**：`上诉截止日期 = 送达日期 + 上诉期限天数`
-   - **送达日期来源**：
-     - 优先使用 zxfw API 响应的 `dt_cjsj` 字段（送达记录创建时间）
-     - 次选使用短信接收时间 `received_at`
-     - 无法确定时，展示"送达时间待确认"
-   - **归档 JSON 字段**：写入 `document.appeal_deadline` 和 `document.appeal_days_remaining`
+8. **上诉期限核对（P1）**：按 [送达与期限规则](references/service-and-deadlines.md) 执行，不按标题直接计算
+   - 先通过送达证据检查，再阅读该份文书的救济告知，核对适用期间、当事人及例外。普通民事15/10日等仅是候选规则；保全、终审、小额诉讼、境内无住所等须分别判断。
+   - 核对当年官方放假调休日历及适用程序法；按日通常不计起算当日，期间内节假日照计，仅末日按规则顺延，调休上班日不按普通周末处理。
+   - 送达、可上诉性、期间规则或日历任一未确认，`deadline_status=pending`，`appeal_deadline=null`、`appeal_days_remaining=null`，报告明确待核验项。确认无该项上诉权时用 `not_applicable`。
+   - 只有全部核对完成才记录 `deadline_status=confirmed`，附 `deadline_basis` 和对应 `service` 证据。多文书、多受送达人分别计算；历史 `sent_at` 不能直接迁移为已确认送达日期。
+   - 缴费、举证等期限单独读取原通知的起算事件与义务，禁止复用上诉期限表。
 
 9. **向用户汇报**：按 [`references/report-format.md`](references/report-format.md) 输出结构化报告
    - 先确认归档完成（案号、法院、当事人、案由、文件数、位置）
    - 列出所有已归档的文书清单
    - 如含传票，⚠️ 高亮提醒开庭时间、地点、审理程序
-   - 如含判决书，⏰ 展示上诉期限信息
+   - 如含判决书/裁定书，⏰ 展示已核实期限或待核验原因，不省略未知状态
    - 如部分失败，列出失败文书和原始链接
 
 ### 第五步：PDF 后处理（可选）

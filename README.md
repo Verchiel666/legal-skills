@@ -34,14 +34,14 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-30 | 新增 | [env-doctor](skills/env-doctor/) | v0.3.0 | 本机环境与全局包体检、账本与安装纪律（对齐 brew doctor 心智模型）：env-doctor.sh 八段体检覆盖全部包管理器与运行时环境面（node/npm 垫片归属比对/PATH 与 Python 解释器版图/npm·uv·pipx·pip·bun·brew 全局落点/缓存/符号链接死链/LaunchAgents 与 cron/账本/rc·LaunchAgents 漂移对照，退出码 0/2/3，full 模式附 brew 过时清单）+ snapshot 漂移基线子命令 + 五条硬纪律（全局安装白名单落点且记账、rc/LaunchAgent/垫片默认禁改、~/.local/bin 唯一垫片层、厂商升级后先体检、归属判断看链接与 prefix）。沉淀自 Hermes 经垫片遮蔽全 shell node 的排查修复。 |
-| 2026-09-30 | 新上传 | [dsh-plugin-dev](skills/dsh-plugin-dev/) | v0.3.2→v0.4.0 | DeepSeek Harness（DSH）插件开发指引首次公开登记：插件设计、开发、装载验证、版本迁移与发布审查（版本感知），支持 Pi/Hermes 插件迁移与隔离装载实验；0.3.2 新增官方能力复用目录条目 `ctx.jobs`（会话内长任务注册表）与 `packages/schedule`（持久定时调度），踩坑表补 renderer「Unknown client plugin」伪影语义解码；0.4.0 沉淀 `ctx.tools.register` 与 `ctx.storageDomain` 能力条目（零依赖手写编译后形态、update 原子读改写等实现知识，P09）、多插件共载自检误报坑与「Pi 插件 DSH 化起手切片」开发路径。 |
-| 2026-09-30 | 更新 | [release-workflow](skills/release-workflow/) | v1.5.0→v1.6.1 | **专家套件发布链路 + Release Notes 适配**：`expert-suites/<id>/` 以相对符号链接定义成员（无 suite.yaml），静态校验 + Git tree 展开生成自包含 `suite-<id>-<semver>.zip`；Release Notes 新增「专家套件」清单节与 `{suites}` 占位符；新增 README 覆盖校验（含 latest/download 链接形态修复与更名资产豁免）与套件链接对齐脚本；md2word/git-batch-commit 补齐 MIT LICENSE。v1.6.1：专家套件不再设独立许可证（DEC-009），删除套件级 LICENSE.txt 并同步校验/打包清单，成员许可不变。 |
-| 2026-09-30 | 更新 | [universal-media-downloader](skills/universal-media-downloader/) | v0.5.1→v0.5.2 | 修复无登录直连脚本在 Python 3.9 下函数定义即崩溃（PEP 604 `str\|None` 注解需 3.10+，macOS 系统 python3 为 3.9.6），改 `Optional[str]`；旧版实测复现、新版 3.9 实测通过，第一级 fallback 恢复可用。 |
-| 2026-09-28 | 更新 | [local-asr](skills/local-asr/) | v2.2.1→v2.3.1 | 复核反例与独立验收余项修复：多段长录音关闭声纹提取开关不再误标 disabled、认领闭环打通；--save-result 覆盖旧文件强制 0600；摘要重复发言人（含空摘要条目）拒绝注入、缺必需章节时 CLI inject 与 verify/HTTP 质量判定一致非零退出；补齐截图端到端证据。 |
-| 2026-09-24 | 更新 | [multi-agent-orchestration](skills/multi-agent-orchestration/) | v2.28.0 | Claude Code auto Worker 的普通 Bash 改由原生 auto 和 settings 判断；编排 hook 保留安装、Orca 协议、tracked 删除及受保护 Git 操作门禁。 |
-| 2026-09-23 | 更新 | [tingwu-asr](skills/tingwu-asr/) | v0.4.7 | 云端转录后的本地摘要注入改用 local-asr 路径，并同步指引与测试。 |
-| 2026-09-23 | 更新 | [douyin-batch-download](skills/douyin-batch-download/) | v1.8.1 | 更新本地转录技能链接为 local-asr。 |
+| 2026-10-06 | 更新 | [git-workflow](skills/git-workflow/) | v1.23.1 | 统一分支命名与 PR 生命周期；主目录门禁拒绝 Git 缩写和组合参数造成的历史/文件覆写。 |
+| 2026-10-04 | 更新 | [multi-agent-orchestration](skills/multi-agent-orchestration/) | v2.36.8 | 整合已独审派发准入、业务产物与持续配置检查，保留 GUI 和工程证据链；公开关闭恢复诊断，原生身份缺口继续阻断真实业务恢复。 |
+| 2026-10-02 | 更新 | [moot-court](skills/moot-court/) | v1.2.4 | 增加 Claude 原生子代理调用的被动索引与14项回归，绑定日志来源并区分完成和未完成；保留完整庭审的有界部分实测，G5及多轮稳定性仍未验证。 |
+| 2026-10-01 | 更新 | [release-workflow](skills/release-workflow/) | v1.6.2 | 修复 ZIP 资产路径假通过；显式区分源码待发布、Preview 和本地 Release staging，保留真实公开链接，按实际成员 ZIP 全量字节核验。自身5套本地构建通过，9套仅本地合成验证；源码1.6.2尚未发布，下载保留1.6.0。 |
+| 2026-09-30 | 更新 | [legal-text-format](skills/legal-text-format/) | v1.2.2→v1.2.3 | 修复固定窗口、日期与关键词导致的案例内容丢失；保留序号、数字、链接和 CLI 尾字符，补充合成回归与保守清理边界。 |
+| 2026-09-30 | 更新 | [pdf-organizer](skills/pdf-organizer/) | v0.6.1 | 修复重复清单编号掩盖覆盖异常、严格模式不完整编译/审计失败未阻断、交错来源溯源顺序丢失；页码范围展开前检查边界，补合成 PDF 回归与执行非事务边界。 |
+| 2026-09-30 | 更新 | [trademark-assistant](skills/trademark-assistant/) | v1.7.3 | 商品名称以明确文字单元格保存，精确保留前缀与首尾空白；超长名称拒绝，新增真实 XLSX/XML 回归。不证明分类正确或官方系统接收。 |
+
 </details>
 
 ## 📋 项目概述
@@ -85,11 +85,17 @@
 
 | 专家套件 | 适用场景 | 成员数 | 版本 | 整套下载 |
 | :--- | :--- | ---: | :---: | :---: |
-| [法律材料与证据处理](expert-suites/legal-material-evidence/) | 文档、扫描件、PDF、音视频、法院来文的数字化和归档 | 9 | v0.1.0 | [下载](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-legal-material-evidence-0.1.0.zip) |
-| [诉讼案件前期研判](expert-suites/litigation-assessment/) | 新案建档、事实证据分析、法律检索、策略和客户交付 | 9 | v0.1.0 | [下载](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-litigation-assessment-0.1.0.zip) |
-| [诉讼文书与案件推进](expert-suites/litigation-documents-operations/) | 起诉文书、裁判分析、上诉再审和案件沟通 | 9 | v0.1.0 | [下载](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-litigation-documents-operations-0.1.0.zip) |
-| [Skill 开发与质量保障](expert-suites/skill-development-quality/) | 项目初始化、Harness、质量审查、验证和 Agent 协作 | 8 | v0.1.0 | [下载](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-development-quality-0.1.0.zip) |
-| [Skill 发布与分发](expert-suites/skill-release-distribution/) | Git、版本、Release、多渠道同步和用户安装 | 8 | v0.1.0 | [下载](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-release-distribution-0.1.0.zip) |
+| [法律材料与证据处理](expert-suites/legal-material-evidence/) | 文档、扫描件、PDF、音视频、法院来文的数字化和归档 | 9 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-legal-material-evidence-0.1.0.zip) |
+| [诉讼案件前期研判](expert-suites/litigation-assessment/) | 新案建档、事实证据分析、法律检索、策略和客户交付 | 9 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-litigation-assessment-0.1.0.zip) |
+| [诉讼文书与案件推进](expert-suites/litigation-documents-operations/) | 起诉文书、裁判分析、上诉再审和案件沟通 | 9 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-litigation-documents-operations-0.1.0.zip) |
+| [Skill 开发与质量保障](expert-suites/skill-development-quality/) | 项目初始化、Harness、质量审查、验证和 Agent 协作 | 8 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-development-quality-0.1.0.zip) |
+| [Skill 发布与分发](expert-suites/skill-release-distribution/) | Git、版本、Release、多渠道同步和用户安装 | 8 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-release-distribution-0.1.0.zip) |
+| [合同审查与小微企业顾问](expert-suites/contract-business-counsel/) | 合同起草审查、OPC / 小微企业经营分诊和顾问交付 | 6 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-contract-business-counsel-0.1.0.zip) |
+| [法律研究与客户洞察](expert-suites/legal-research-client-insight/) | 客户增量简报、月季行业研究、来源核验与文本规范 | 5 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-legal-research-client-insight-0.1.0.zip) |
+| [知识产权实务](expert-suites/intellectual-property-practice/) | 专利下载及初步分析、商标申请辅助；双入口分流 | 5 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-intellectual-property-practice-0.1.0.zip) |
+| [法律 Skill 对齐与评测](expert-suites/legal-skill-design-evaluation/) | 法律经验 Brief、通用质量门及法律领域产出评测 | 3 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-legal-skill-design-evaluation-0.1.0.zip) |
+
+新增四套的“待发布”链接为下一次 Release 预留，发布前可下载对应 PR 通过 CI 后生成的 Preview 产物。现有五套源码为 v0.1.1，表内仍保留已发布 v0.1.0 下载；新版入口见各套 README。套件安装前请阅读各自 README 的能力范围及依赖；重叠成员需核对版本，避免旧包覆盖新版。
 
 ## 🛠️ 技能列表
 
@@ -238,8 +244,8 @@
 <td>通用·诉讼</td>
 <td style="word-break:break-word">基于案卷自动组织多角色模拟庭审：法官与民事原被告／刑事控辩通过书记员记录交换发言；支持版本化材料、取消重派与进度恢复，交付庭审笔录、争点复盘和庭前补强清单</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.2.1</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/moot-court-1.2.1.zip">下载</a></td>
+<td style="text-align:center">v1.2.4</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/moot-court-1.2.1.zip">已发布包 v1.2.1</a></td>
 <td></td>
 </tr>
 <tr>
@@ -373,9 +379,9 @@
 <td>专业·Skill开发</td>
 <td style="word-break:break-word">法律 Skill 分层质量评测：消费 skill-lint 通用质量结论，再用三份测试材料、通用六维度、场景微调与律师 taste 评估法律产出并定位最小修复单元；含评测包结构化契约、运行收据门禁与指令稳定性边界</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v0.8.12</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/legal-skill-evaluation-0.8.12.zip">下载</a></td>
-<td></td>
+<td style="text-align:center">v0.8.13</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/legal-skill-evaluation-0.8.12.zip">下载 v0.8.12</a></td>
+<td>源码 v0.8.13 待发布；下载为已发布 v0.8.12</td>
 </tr>
 <tr>
 <td><a href="skills/case-dashboard/"><strong>case-dashboard</strong></a></td>
@@ -447,8 +453,8 @@
 <td>通用·PDF整理</td>
 <td style="word-break:break-word">法律 PDF 文书整理工具：按内容拆分、合并或直接重命名 OCR 后双层扫描件，生成页面索引、manifest 草稿和下游交接文件；支持旋转与倾斜校正，不做 OCR 或压缩</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v0.6.0</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/pdf-organizer-0.6.0.zip">下载</a></td>
+<td style="text-align:center">v0.6.1</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/pdf-organizer-0.6.0.zip">已发布 v0.6.0</a></td>
 <td></td>
 </tr>
 <tr>
@@ -703,10 +709,10 @@
 <tr>
 <td><a href="skills/git-workflow/"><strong>git-workflow</strong></a></td>
 <td>工具·Git</td>
-<td style="word-break:break-word">Git 工作流安全助手，覆盖分支管理、长期集成分支、Monorepo 安全合并、PR、冲突处理、安全回退、分支清理和身份绑定 safe-push</td>
+<td style="word-break:break-word">Git 工作流安全助手，覆盖分支管理、长期集成分支、Monorepo 安全合并、PR、冲突处理、安全回退、分支清理、身份绑定 safe-push、提交身份自检/污染审计、worktree 前 3 查判读与常见事故恢复</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.8.7</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/git-workflow-1.8.7.zip">下载 v1.6.0</a></td>
+<td style="text-align:center">v1.17.1</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/git-workflow-1.8.7.zip">旧版ZIP（内容版本待核）</a></td>
 <td></td>
 </tr>
 <tr>
@@ -721,10 +727,10 @@
 <tr>
 <td><a href="skills/multi-agent-orchestration/"><strong>multi-agent-orchestration</strong></a></td>
 <td>工具·Agent协作</td>
-<td style="word-break:break-word">Orca-first 多 Agent 本地编排，支持 Wave receipt、worktree/terminal UI、Run/Task/Dispatch、worker transcript、Orca 429 idle 巡检与错峰唤醒、严格 lifecycle 结算、五后端总控、Harness 层级门禁、Wave Autopilot live-session 快路径与 L2 跨会话持久 controller core</td>
+<td style="word-break:break-word">Orca-first 多 Agent 本地编排，支持 Wave receipt、worktree/terminal、Run/Task/Dispatch、额度与生命周期门禁；按需接入独立 ZCode CLI、MiniMax Code、CodeBuddy、Qoder CN 与千问办公，日常池保持 Claude Code/Codex</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v2.30.5</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/multi-agent-orchestration-2.30.5.zip">下载 v2.27.4</a></td>
+<td style="text-align:center">v2.36.8</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/multi-agent-orchestration-2.30.5.zip">已发布 v2.30.5</a></td>
 <td></td>
 </tr>
 <tr>
@@ -732,9 +738,9 @@
 <td>工具·发布</td>
 <td style="word-break:break-word">GitHub 项目全流程发布工作流：版本号、Release Notes、CI 与发布验证；支持 monorepo 单 Skill ZIP 和基于符号链接定义、Release 时展开的专家套件 ZIP</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.6.1</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/latest/download/release-workflow-1.6.1.zip">下载</a></td>
-<td></td>
+<td style="text-align:center">v1.6.2</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/release-workflow-1.6.0.zip">下载 v1.6.0</a></td>
+<td>源码 v1.6.2 待发布；下载为已发布 v1.6.0</td>
 </tr>
 <tr>
 <td><a href="skills/github-star-manager/"><strong>github-star-manager</strong></a></td>
@@ -770,15 +776,6 @@
 <td style="text-align:center">MIT</td>
 <td style="text-align:center">v0.3.2</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/dsh-plugin-dev-0.3.2.zip">下载</a></td>
-<td></td>
-</tr>
-<tr>
-<td><a href="skills/dsh-plugin-lint/"><strong>dsh-plugin-lint</strong></a></td>
-<td>工具·质量审查</td>
-<td style="word-break:break-word">DeepSeek Harness（DSH）插件的设计预检、质量审查与发布验收工具（版本感知）</td>
-<td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.0.0</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.21/dsh-plugin-lint-1.0.0.zip">下载</a></td>
 <td></td>
 </tr>
 <tr>
@@ -829,6 +826,7 @@
 | 技能                     | 版本   | 说明                                                                                                                                          |
 | ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | mineru-ocr               | v1.2.0 | 已归档（2026-09-04）。OCR 能力由 [legal-ocr](skills/legal-ocr/) 统一覆盖，推荐使用 legal-ocr 作为唯一入口。原 skill 依然可用：需自行配置 MinerU API Token 才能正常使用 |
+| dsh-plugin-lint          | v1.0.0 | 已合并（2026-09-29，PR #206 收拢）。插件设计预检、质量审查与发布验收能力并入 [dsh-plugin-dev](skills/dsh-plugin-dev/) 统一覆盖，后者 description 已含"发布前机械审查与验收" |
 | paddle-ocr               | v1.1.1 | 已归档（2026-09-04）。OCR 能力由 [legal-ocr](skills/legal-ocr/) 统一覆盖，推荐使用 legal-ocr 作为唯一入口。原 skill 依然可用：需自行配置 PaddleOCR API 才能正常使用 |
 | multi-search             | v1.1.0 | 智能多主题深度研究工具，功能被[multi-agent-orchestration](skills/multi-agent-orchestration/) v1.16+ 内置的并行 Subagent 能力覆盖，停止独立维护 |
 | skill-architect          | v1.6.2 | 已重定位为[skill-lint](skills/skill-lint/) v2.0.0，创建能力不再作为本仓库独立入口维护                                                          |
