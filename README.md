@@ -34,14 +34,14 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-10 | 更新 | [douyin-batch-download](skills/douyin-batch-download/) | v1.8.1→v1.11.0 | 下载 staging 按运行隔离+作者 sec_user_id 精确身份+--root/--db；压缩校验后原子替换与失败退出码；manifest v1 只读导出与指标历史快照（缺失≠0、播放分母缺失为 null）；封面按 aweme_id 绑定（修静态封面丢失缺口）。下载 zip 仍为已发布 1.8.1。 |
 | 2026-10-09 | 更新 | [release-workflow](skills/release-workflow/) | v1.6.3 | 增加标准 updater 验签、真实进程回收/安装/恢复门禁、旧客户端手动引导及不可变发布规则；源码候选1.6.3尚未发布，下载保留1.6.0。 |
 | 2026-10-06 | 更新 | [legal-skill-evaluation](skills/legal-skill-evaluation/) | v0.8.14 | 合同语义门禁严格校验可用性布尔值与摘录类型，拒绝 truthy 假通过并返回结构化输入错误；完整候选回归仍有2项既有候选/历史产物绑定不匹配，源码待发布。 |
-| 2026-10-06 | 更新 | [git-workflow](skills/git-workflow/) | v1.23.1 | 统一分支命名与 PR 生命周期；主目录门禁拒绝 Git 缩写和组合参数造成的历史/文件覆写。 |
+| 2026-10-06 | 更新 | [git-workflow](skills/git-workflow/) | v1.17.1→v1.23.1 | 默认创建时稀疏检出与场景化参考读取；统一分支命名与 PR 生命周期；主目录门禁拒绝 Git 缩写和组合参数造成的历史/文件覆写。 |
 | 2026-10-04 | 更新 | [multi-agent-orchestration](skills/multi-agent-orchestration/) | v2.36.8 | 整合已独审派发准入、业务产物与持续配置检查，保留 GUI 和工程证据链；公开关闭恢复诊断，原生身份缺口继续阻断真实业务恢复。 |
 | 2026-10-02 | 更新 | [moot-court](skills/moot-court/) | v1.2.4 | 增加 Claude 原生子代理调用的被动索引与14项回归，绑定日志来源并区分完成和未完成；保留完整庭审的有界部分实测，G5及多轮稳定性仍未验证。 |
 | 2026-09-30 | 更新 | [elements-complaint-generator](skills/elements-complaint-generator/) | v0.16.1 | 修复09原模板字段串栏、金额尾注/单位和布尔/枚举/调解错位；新增逐栏OOXML正反例，正式版PDF及DSH宿主验收仍独立阻断。 |
 | 2026-09-30 | 更新 | [legal-text-format](skills/legal-text-format/) | v1.2.2→v1.2.3 | 修复固定窗口、日期与关键词导致的案例内容丢失；保留序号、数字、链接和 CLI 尾字符，补充合成回归与保守清理边界。 |
-| 2026-09-30 | 更新 | [pdf-organizer](skills/pdf-organizer/) | v0.6.1 | 修复重复清单编号掩盖覆盖异常、严格模式不完整编译/审计失败未阻断、交错来源溯源顺序丢失；页码范围展开前检查边界，补合成 PDF 回归与执行非事务边界。 |
 
 </details>
 
@@ -171,7 +171,7 @@
 <td>工具·下载</td>
 <td style="word-break:break-word">抖音视频批量下载工具，基于 F2 框架，支持单个/批量博主下载，自动 Cookie 管理，差量更新机制</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.8.1</td>
+<td style="text-align:center">v1.11.0</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/douyin-batch-download-1.8.1.zip">下载</a></td>
 <td></td>
 </tr>
