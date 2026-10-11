@@ -34,7 +34,6 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-10-10 | 更新 | [douyin-batch-download](skills/douyin-batch-download/) | v1.8.1→v1.11.0 | 下载 staging 按运行隔离+作者 sec_user_id 精确身份+--root/--db；压缩校验后原子替换与失败退出码；manifest v1 只读导出与指标历史快照（缺失≠0、播放分母缺失为 null）；封面按 aweme_id 绑定（修静态封面丢失缺口）。下载 zip 仍为已发布 1.8.1。 |
 | 2026-10-09 | 更新 | [release-workflow](skills/release-workflow/) | v1.6.3 | 增加标准 updater 验签、真实进程回收/安装/恢复门禁、旧客户端手动引导及不可变发布规则；源码候选1.6.3尚未发布，下载保留1.6.0。 |
 | 2026-10-06 | 更新 | [legal-skill-evaluation](skills/legal-skill-evaluation/) | v0.8.14 | 合同语义门禁严格校验可用性布尔值与摘录类型，拒绝 truthy 假通过并返回结构化输入错误；完整候选回归仍有2项既有候选/历史产物绑定不匹配，源码待发布。 |
 | 2026-10-06 | 更新 | [git-workflow](skills/git-workflow/) | v1.17.1→v1.23.1 | 默认创建时稀疏检出与场景化参考读取；统一分支命名与 PR 生命周期；主目录门禁拒绝 Git 缩写和组合参数造成的历史/文件覆写。 |
@@ -167,15 +166,6 @@
 <td></td>
 </tr>
 <tr>
-<td><a href="skills/douyin-batch-download/"><strong>douyin-batch-download</strong></a></td>
-<td>工具·下载</td>
-<td style="word-break:break-word">抖音视频批量下载工具，基于 F2 框架，支持单个/批量博主下载，自动 Cookie 管理，差量更新机制</td>
-<td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.11.0</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/douyin-batch-download-1.8.1.zip">下载</a></td>
-<td></td>
-</tr>
-<tr>
 <td><a href="skills/dingtalk-minutes/"><strong>dingtalk-minutes</strong></a></td>
 <td>工具·会议</td>
 <td style="word-break:break-word">基于钉钉官方 dws CLI 封装 AI 听记（妙记）只读能力：列表/摘要/语音转写原文/关键词/待办/音频地址；本地归档与增量同步（archive 按 YYMMDD_标题 命名，index.json 记录同步状态）；镜像 transcript/summary/todos 到外部文件夹</td>
@@ -234,11 +224,11 @@
 <tr>
 <td><a href="skills/litigation-analysis/"><strong>litigation-analysis</strong></a></td>
 <td>通用·诉讼</td>
-<td style="word-break:break-word">诉讼分析工具，支持起诉状与证据分析、判决书深度分析、庭审笔录复盘。覆盖诉讼全流程：案件初期评估→判决分析→庭审复盘，生成内部版/研究版/客户版三层输出，支持上诉/再审决策支持</td>
+<td style="word-break:break-word">判决书深度分析：围绕单份判决拆解事实、证据、裁判理由与主文，提出文内疑点和待核问题；综合研判、庭审复盘和完整上诉再审决策由 legal-case-analysis 承接</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.4.0</td>
+<td style="text-align:center">v1.5.0</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/litigation-analysis-1.4.0.zip">下载</a></td>
-<td></td>
+<td>源码待发布；下载仍为上一已发布包</td>
 </tr>
 <tr>
 <td><a href="skills/moot-court/"><strong>moot-court</strong></a></td>
@@ -261,11 +251,11 @@
 <tr>
 <td><a href="skills/legal-case-analysis/"><strong>legal-case-analysis</strong></a></td>
 <td>通用·分析</td>
-<td style="word-break:break-word">通用法律分析技能，基于案件材料、咨询材料、合同资料、证据材料或检索结果进行法律分析、案件研判、风险评估与诉讼/非诉策略；前置分析引擎，报告为可选交付形态</td>
+<td style="word-break:break-word">综合案件研判：整合案件、咨询、合同、证据与庭审材料，组织法律检索并形成风险和策略判断；复用判决分析成果，按需交付底稿或报告</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.0.0</td>
+<td style="text-align:center">v1.1.0</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/legal-case-analysis-1.0.0.zip">下载</a></td>
-<td></td>
+<td>源码待发布；下载仍为上一已发布包</td>
 </tr>
 <tr>
 <td><a href="skills/legal-proposal-generator/"><strong>legal-proposal-generator</strong></a></td>
