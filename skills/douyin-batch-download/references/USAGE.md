@@ -136,7 +136,7 @@ python scripts/compress.py --replace
 python scripts/generate-data.py
 
 # 2. 直接用浏览器打开 index.html（或双击文件）
-open /Users/maoking/Library/Application\\ Support/maoscripts/skills/legal-skills/test/douyin-batch-download/downloads/index.html
+open <仓库根>/test/douyin-batch-download/downloads/index.html
 ```
 
 **功能**：
