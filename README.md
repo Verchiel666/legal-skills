@@ -34,6 +34,7 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-12 | 更新 | [img2pdf](skills/img2pdf/) | v1.3.0 | 按原文页边界裁切文书滚动截图，去手机界面和上下邻页；核对来源尺寸/哈希，逐页视觉复核后编排 A4；源码待发布。 |
 | 2026-10-12 | 新上传 | [express-tracking](skills/express-tracking/) | v0.2.1 | 快递邮寄跟踪与证据留痕（EMS/顺丰官网轨迹+水印 PDF 凭证归档）；登录态持久化与 trusted 输入反风控；首次公开登记。 |
 | 2026-10-11 | 更新 | [litigation-analysis](skills/litigation-analysis/) | v1.5.0 | 聚焦单份判决深析；起诉状与庭审参考迁至综合研判，重整模板与交接，源码待发布。 |
 | 2026-10-11 | 更新 | [legal-case-analysis](skills/legal-case-analysis/) | v1.1.0 | 明确综合研判与检索职责，承接起诉状、庭审参考，复用判决节点成果；源码待发布。 |
@@ -41,7 +42,6 @@
 | 2026-10-06 | 更新 | [legal-skill-evaluation](skills/legal-skill-evaluation/) | v0.8.14 | 合同语义门禁严格校验可用性布尔值与摘录类型，拒绝 truthy 假通过并返回结构化输入错误；完整候选回归仍有2项既有候选/历史产物绑定不匹配，源码待发布。 |
 | 2026-10-06 | 更新 | [git-workflow](skills/git-workflow/) | v1.17.1→v1.23.1 | 默认创建时稀疏检出与场景化参考读取；统一分支命名与 PR 生命周期；主目录门禁拒绝 Git 缩写和组合参数造成的历史/文件覆写。 |
 | 2026-10-04 | 更新 | [multi-agent-orchestration](skills/multi-agent-orchestration/) | v2.36.8 | 整合已独审派发准入、业务产物与持续配置检查，保留 GUI 和工程证据链；公开关闭恢复诊断，原生身份缺口继续阻断真实业务恢复。 |
-| 2026-10-02 | 更新 | [moot-court](skills/moot-court/) | v1.2.4 | 增加 Claude 原生子代理调用的被动索引与14项回归，绑定日志来源并区分完成和未完成；保留完整庭审的有界部分实测，G5及多轮稳定性仍未验证。 |
 
 </details>
 
@@ -443,10 +443,10 @@
 <tr>
 <td><a href="skills/img2pdf/"><strong>img2pdf</strong></a></td>
 <td>工具·PDF排版</td>
-<td style="word-break:break-word">将图片或 PDF 页面按 N 张/页编排为标准化 A4 PDF，或将长截图渲染为单张自适应高度 PDF；支持 1/2/3/4 张每页布局，自动检测图片横竖方向，适用于法律证据材料整理（手机截图、视频取证截图、现场照片、长截图等）</td>
+<td style="word-break:break-word">将图片或 PDF 页面编排为 A4 PDF；文书滚动截图先视觉确认原文页，再裁掉手机界面及上下邻页，一页一图。保留连续长图模式与 1/2/3/4 张每页布局。</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.2.0</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/img2pdf-1.2.0.zip">下载</a></td>
+<td style="text-align:center">v1.3.0（源码）</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/img2pdf-1.2.0.zip">已发布 v1.2.0</a></td>
 <td></td>
 </tr>
 <tr>
