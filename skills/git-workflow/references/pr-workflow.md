@@ -72,7 +72,7 @@ gh pr checks '<N>'
 
 任一条件不满足则停止：
 
-- PR 是 OPEN 且非 draft；在授权和验收满足后转 ready。
+- PR 是 OPEN 且非 draft；在授权和验收满足后转 ready。**draft PR 的 GitHub GraphQL API 拒绝合并**，且 `gh pr edit` 无 `--remove-draft` 参数。转换标准操作：关闭原 draft PR（`gh pr close`）→ 用非 draft 参数重建（`gh pr create` 不带 `-d`）→ 再 squash 合并。不要用 API PATCH 尝试改 draft 字段（实验性质，行为不稳）。
 - mergeable 明确可合并，完整 diff 可读，范围与删除解释已核。
 - 独立 review 有明确 verdict，分支保护和 required checks 满足；CHANGES_REQUESTED、结论矛盾或只有摘要均未通过。
 - 最终 head 的 checks 明确通过。失败、等待、未知或读取失败不合；仓库明确无需某项检查时核实际保护与项目合同，不能把缺失自行判 PASS。

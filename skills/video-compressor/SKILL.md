@@ -163,11 +163,17 @@ python3 scripts/trim_silences.py -i <路径> --noise-db -40 --min-duration 5
 
 | 平台 | 编码器 | 速度提升（实测） | 输出格式 | 说明 |
 |------|--------|------------------|----------|------|
-| Apple Silicon (M1/M2/M3/M4) | hevc_videotoolbox | 2-5x（1080p60） / 5-15x（720p30） | HEVC/H.265 | 自动使用硬件编码 |
-| Apple Silicon (备用) | h264_videotoolbox | 2-4x（1080p60） / 4-10x（720p30） | H.264 | HEVC 不可用时的回退 |
+| Apple Silicon (M1/M2/M3/M4) | hevc_videotoolbox | 因机型散热条件差异极大，**须以实际探测为准**（见下方实测备注） | HEVC/H.265 | 自动使用硬件编码 |
+| Apple Silicon (备用) | h264_videotoolbox | 同上 | H.264 | HEVC 不可用时的回退 |
 | 其他平台 | libx264 | 1x 实时 | H.264 | 标准软件编码 |
 
-> 速度提示：上述数值为实际测试参考范围，实际速度受分辨率、帧率、画质参数、系统负载影响。1080p60 高帧率场景下 VideoToolbox 实际约 2-5x 实时（而非 5-15x），3 小时视频约需 50 分钟。
+> **实测参考（MacBook Air M1 无风扇，8GB）：**
+> - x264 veryfast CRF28 软编：约 **5–7× 实时**（单进程）；4–6 并发时约 **10× 实时**（已达该机型热降频天花板），更多并发反而下降
+> - HandBrake `vt_h264`：比 x264 快约 **15%**，但输出体积大 **60%**，收益不高
+> - **brew ffmpeg 内置 VideoToolbox 硬解链路不可用**（`hwaccel_output_format=videotoolbox` 报 `Unrecognised hwaccel output format`，brew 构建未含 VT 硬件帧输出）
+> - `preset` 升降档（ultrafast ↔ veryfast）对 x264 速度影响可忽略，不值得为提速降 preset
+
+> 速度提示：上述数值为实际测试参考范围，实际速度受分辨率、帧率、画质参数、系统负载影响。**并发吞吐测试必须校验每个子进程的 rc**（return code）；进程秒退会留下"高速"的假象，必须在运行时检查实际输出文件大小和编码耗时。录屏/课件源码率特征为 ≤3Mbps，压缩前先 `ffprobe -v error -show_entries format=bit_rate -of csv=p=0 <file>` 确认。
 
 > 录屏/课件源码率陷阱（v1.5.0 已自动化）：压缩前先 `ffprobe` 查源文件 `bit_rate`。硬件路径（hevc_vt/h264_vt）在 `hw_detect.py` 中写死目标码率 2000k 且忽略 `--crf/--maxrate` 参数；源总码率 ≤3 Mbps（录屏/课件特征）时脚本自动选用 x264 CRF 自适应编码并打印提示，高码率源仍走硬件路径，`--codec` 显式指定可覆盖自动选择。CRF 自适应对静止画面几乎不耗码率，实测录屏压缩比 80-88%、速度 12-20x 实时。手动估算可用 60 秒采样：`ffmpeg -ss <中段> -t 60 -i 输入 -c:v libx264 -crf 23 ...` 看采样大小推算全片。
 
