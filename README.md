@@ -37,7 +37,7 @@
 | 2026-10-13 | 更新 | [judgment-analysis](skills/judgment-analysis/) | v2.0.0 | 由 litigation-analysis 更名：职责已收敛为单份判决深析，调用名与目录名对齐；legal-case-analysis 等引用同步更新，下载仍为旧名 1.4.0 包。 |
 | 2026-10-13 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.6.8 | 新增 owner/repo 视觉消歧手册：7 条 OCR 误读消歧规则+完整流程+不要做清单，截图输入 404 不再误判「找不到」。 |
 | 2026-10-13 | 更新 | [case-progress](skills/case-progress/) | v0.9.0 | 补齐快递登记、状态回写与 show 邮寄列表；来源保护、日期与凭证路径校验及合成 CLI 回归，源码待发布。 |
-| 2026-10-12 | 更新 | [img2pdf](skills/img2pdf/) | v1.3.0 | 按原文页边界裁切文书滚动截图，去手机界面和上下邻页；核对来源尺寸/哈希，逐页视觉复核后编排 A4；源码待发布。 |
+| 2026-10-13 | 更新 | [img2pdf](skills/img2pdf/) | v1.3.1 | 补充逐图六步执行卡、不同页位置示意、坐标换算算例和失败修正表，减少多模态模型裁切时的隐含判断；源码待发布。 |
 | 2026-10-12 | 新上传 | [express-tracking](skills/express-tracking/) | v0.2.1 | 快递邮寄跟踪与证据留痕（EMS/顺丰官网轨迹+水印 PDF 凭证归档）；登录态持久化与 trusted 输入反风控；首次公开登记。 |
 | 2026-10-11 | 更新 | [litigation-analysis](skills/judgment-analysis/) | v1.5.0 | 聚焦单份判决深析；起诉状与庭审参考迁至综合研判，重整模板与交接，源码待发布。（该技能现已更名 judgment-analysis） |
 | 2026-10-11 | 更新 | [legal-case-analysis](skills/legal-case-analysis/) | v1.1.0 | 明确综合研判与检索职责，承接起诉状、庭审参考，复用判决节点成果；源码待发布。 |
@@ -429,7 +429,7 @@
 <td>工具·PDF排版</td>
 <td style="word-break:break-word">将图片或 PDF 页面编排为 A4 PDF；文书滚动截图先视觉确认原文页，再裁掉手机界面及上下邻页，一页一图。保留连续长图模式与 1/2/3/4 张每页布局。</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.3.0（源码）</td>
+<td style="text-align:center">v1.3.1（源码）</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/img2pdf-1.2.0.zip">已发布 v1.2.0</a></td>
 <td></td>
 </tr>
