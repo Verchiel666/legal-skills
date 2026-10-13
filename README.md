@@ -41,7 +41,7 @@
 | 2026-10-12 | 新上传 | [express-tracking](skills/express-tracking/) | v0.2.1 | 快递邮寄跟踪与证据留痕（EMS/顺丰官网轨迹+水印 PDF 凭证归档）；登录态持久化与 trusted 输入反风控；首次公开登记。 |
 | 2026-10-11 | 更新 | [litigation-analysis](skills/judgment-analysis/) | v1.5.0 | 聚焦单份判决深析；起诉状与庭审参考迁至综合研判，重整模板与交接，源码待发布。（该技能现已更名 judgment-analysis） |
 | 2026-10-11 | 更新 | [legal-case-analysis](skills/legal-case-analysis/) | v1.1.0 | 明确综合研判与检索职责，承接起诉状、庭审参考，复用判决节点成果；源码待发布。 |
-| 2026-10-09 | 更新 | [release-workflow](skills/release-workflow/) | v1.6.3 | 增加标准 updater 验签、真实进程回收/安装/恢复门禁、旧客户端手动引导及不可变发布规则；源码候选1.6.3尚未发布，下载保留1.6.0。 |
+| 2026-10-11 | 更新 | [git-workflow](skills/git-workflow/) | v1.23.2 | 修复链接转实体目录与既有本机路径清理的隐私预检误报，保留新增内容、凭证及完整历史检查。 |
 
 </details>
 
