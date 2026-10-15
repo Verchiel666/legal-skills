@@ -261,3 +261,5 @@ skills/github-star-manager/output/
 .audit-evidence/
 # ZCode Desktop 本地工具配置（自动生成，含本机规则区）
 .zcodeignore
+skills/github-star-manager/scripts/output/stars_raw.json
+skills/github-star-manager/scripts/output/stars_raw_new.json
