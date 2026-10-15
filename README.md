@@ -34,7 +34,7 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-10-15 | 更新 | [skill-manager](skills/skill-manager/) | v1.8.4 | 新增改名软链收敛工具 relink-skill.py：登记优先（--register 建档/--from-registry 查表秒级）+ 四类来源分级（registry/浅层/递归/全盘），项目集合目录自动发现子项目；源码待发布。 |
+| 2026-10-16 | 更新 | [skill-manager](skills/skill-manager/) | v1.9.0 | 改名软链收敛工具链成型：安装即登记（链接创建自动写 registry install_links）+ relink-skill.py 查表秒级改名收敛（--from-registry），四类来源分级与项目集合目录子项目发现；源码待发布。 |
 | 2026-10-15 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.8.1 | 审计批次 A+B/C：快照完整性守卫与 9 项缺陷修复；Agent 只读查询接口（recent/interests/match/evidence/evidence-fetch/research，JSON envelope）与机会卡反馈闭环；快照补 repo 数字主键 id（改名锚定，下游切换前置）。 |
 | 2026-10-15 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.0.1 | 退役删除冻结兼容旧目录，仓库收敛为单一目录名；私人配置与历史 archive 并入新目录，修复断链 hook 与 skill_root；wire schema 与状态路径兼容不变。 |
 | 2026-10-15 | 更新 | [video-screenshot](skills/video-screenshot/) | v1.2.0 | Task-039：滚动文字模式加 `--deadline-seconds` 墙钟预算与 `--resume-from` 批次级恢复（帧字节等值才复用、恢复终稿逐字节一致），成本预估登记；含 v1.1.3 正文裁边/跨页重复/来源校验修复。源码待发布。 |
