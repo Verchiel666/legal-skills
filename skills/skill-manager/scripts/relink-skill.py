@@ -176,16 +176,28 @@ def default_harness_roots(extra_roots):
     return roots
 
 
-def resolve_harness_roots(raw_roots):
-    """浅层模式的根解析：basename 是 harness 名（如 .claude）的当配置根直用，
-    否则视为项目根，展开为其 8 个 harness 子目录。"""
+def resolve_harness_roots(raw_roots, discover_children=True):
+    """浅层模式的根解析：basename 是 harness 名（如 .claude）的当配置根直用；
+    否则视为项目根，展开为其 8 个 harness 子目录。
+
+    discover_children=True 时再向下发现一层子项目（项目集合目录场景：
+    如把 ~/code 传进来，其下每个子项目的 .claude/.codex 都会被检查）。
+    """
     out = []
     for r in raw_roots:
         r = expand(r)
         if os.path.basename(r) in HARNESS_DIRS:
             out.append(r)
-        else:
-            out += [os.path.join(r, h) for h in HARNESS_DIRS]
+            continue
+        out += [os.path.join(r, h) for h in HARNESS_DIRS]
+        if not discover_children:
+            continue
+        try:
+            for entry in os.scandir(r):
+                if entry.is_dir(follow_symlinks=False) and entry.name not in SKIP_DIRS:
+                    out += [os.path.join(entry.path, h) for h in HARNESS_DIRS]
+        except OSError:
+            continue
     return out
 
 
