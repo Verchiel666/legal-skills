@@ -11,6 +11,10 @@
   python3 relink-skill.py --old /path/to/old-skill-dir --new /path/to/new-skill-dir
   python3 relink-skill.py --old ... --new ... --apply --report /tmp/relink-report.json
   python3 relink-skill.py --old ... --new ... --exclude-glob '*/visualizations/*'
+  # 项目不在用户级配置目录时：
+  python3 relink-skill.py --old ... --new ... --roots /path/to/project-a --roots /path/to/project-b
+  # 或全盘扫描整个用户主目录：
+  python3 relink-skill.py --old ... --new ... --full-home
 """
 import argparse
 import fnmatch
@@ -19,23 +23,43 @@ import os
 import sys
 import time
 
+# 默认只扫通用的用户级 Agent 配置目录（对任何机器成立）；
+# 项目级安装位置因人而异，用 --roots 追加或 --full-home 全盘兜底，不内置猜测。
 DEFAULT_ROOTS = [
     "~/.agents/skills",
     "~/.claude",
     "~/.codex",
     "~/.zcode",
-    "~/Library/Application Support/maoscripts",
-    "~/orca/workspaces",
 ]
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".Trash"}
+
+# --full-home 模式追加跳过的目录名：确定不承载 Agent 配置/项目代码的重资源区，
+# 跳过以控制全盘耗时；~/Library/Application Support（用户项目常驻处）不跳。
+FULL_HOME_SKIP_NAMES = {
+    "Caches", "Containers", "Group Containers", "MobileSync", "Metadata",
+    "Saved Application State", "WebKit", "Logs", "Developer", "CloudStorage",
+    "com.apple.metadata.mdsbackup", "knowledge-csp", "FaceTime", "iCloud",
+}
+# --full-home 模式按绝对路径跳过的目录（名字太通用不能按名跳）
+FULL_HOME_SKIP_PATHS = {
+    "~/Library/Photos",
+    "~/Pictures/Photos Library.photoslibrary",
+    "~/Library/Messages",
+    "~/Library/Mail",
+    "~/Library/Metadata/MobileMeAccounts",
+}
 
 
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--old", required=True, help="旧技能目录绝对路径（链接命中前缀）")
     ap.add_argument("--new", required=True, help="新技能目录绝对路径（修复后的指向）")
-    ap.add_argument("--roots", action="append", default=[], help="追加扫描根（可多次）；路径以 ~ 开头会展开")
+    ap.add_argument("--roots", action="append", default=[],
+                    help="追加扫描根（可多次，如各项目根目录）；路径以 ~ 开头会展开")
     ap.add_argument("--roots-only", action="store_true", help="只用 --roots 提供的根，忽略内置默认根")
+    ap.add_argument("--full-home", action="store_true",
+                    help="全盘扫描整个用户主目录（替代默认 6 根；自动跳过 Caches/Containers/iCloud 等重资源区），"
+                         "外置卷请另用 --roots /Volumes/xxx 追加")
     ap.add_argument("--exclude-glob", action="append", default=[],
                     help="fnmatch 排除模式（可多次），命中的链接跳过，如 '*/visualizations/*'")
     ap.add_argument("--apply", action="store_true", help="执行修复（默认 dry-run 只打印计划）")
@@ -55,24 +79,37 @@ def resolve_target(link_path, target):
     return os.path.normpath(os.path.join(os.path.dirname(link_path), target))
 
 
-def iter_symlinks(roots, quiet):
+def iter_symlinks(roots, quiet, skip_names=None):
+    """基于 os.scandir 的遍历：d_type 免额外 lstat，全盘扫描性能关键。
+
+    指向目录的软链只 yield 不深入（等价 walk followlinks=False），
+    否则 skills 安装链这类目录级链接会漏扫或成环。
+    """
+    skip_names = SKIP_DIRS if skip_names is None else skip_names
+    skip_paths = {expand(p) for p in FULL_HOME_SKIP_PATHS}
+
+    def walk_dir(dirpath):
+        try:
+            with os.scandir(dirpath) as it:
+                for entry in it:
+                    try:
+                        if entry.is_symlink():
+                            yield entry.path
+                        elif entry.is_dir(follow_symlinks=False):
+                            if entry.name not in skip_names and entry.path not in skip_paths:
+                                yield from walk_dir(entry.path)
+                    except OSError:
+                        continue
+        except OSError:
+            return
+
     for root in roots:
         root = expand(root)
         if not os.path.isdir(root):
             if not quiet:
                 print(f"  跳过不存在根: {root}", file=sys.stderr)
             continue
-        for dirpath, dirnames, filenames in os.walk(root):
-            # 指向目录的软链出现在 dirnames（walk 默认不深入），必须单独检查，
-            # 否则 skills 安装链这类目录级链接全部漏扫。
-            for d in list(dirnames):
-                if os.path.islink(os.path.join(dirpath, d)):
-                    yield os.path.join(dirpath, d)
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-            for name in filenames:
-                p = os.path.join(dirpath, name)
-                if os.path.islink(p):
-                    yield p
+        yield from walk_dir(root)
 
 
 def classify(link_path, target, old, new):
@@ -120,13 +157,21 @@ def main():
         print("错误: --old 与 --new 相同", file=sys.stderr)
         return 2
 
-    roots = [expand(r) for r in args.roots] if args.roots_only else \
-            [expand(r) for r in DEFAULT_ROOTS] + [expand(r) for r in args.roots]
+    if args.full_home:
+        home = expand("~")
+        roots = [home] + [expand(r) for r in args.roots]
+        skip_names = SKIP_DIRS | FULL_HOME_SKIP_NAMES
+    elif args.roots_only:
+        roots = [expand(r) for r in args.roots]
+        skip_names = None
+    else:
+        roots = [expand(r) for r in DEFAULT_ROOTS] + [expand(r) for r in args.roots]
+        skip_names = None
     # 旧目录已删除是常态（先退役再收敛）；扫描不要求它存在
 
     findings, skipped = [], []
     t0 = time.time()
-    for link in iter_symlinks(roots, args.quiet):
+    for link in iter_symlinks(roots, args.quiet, skip_names):
         try:
             target = os.readlink(link)
         except OSError:

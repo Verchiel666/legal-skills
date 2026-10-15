@@ -1,5 +1,14 @@
 # 变更日志
 
+## [1.8.1] - 2026-10-15
+
+### 新增
+- **relink-skill.py 增加 `--full-home` 全盘扫描模式**：项目不一定集中在已知根目录（如项目住在 `~/Library/Application Support` 等非常规位置），`--full-home` 扫描整个用户主目录，自动跳过确定不承载 Agent 配置的重资源区（Caches、Containers、Group Containers、MobileSync、iCloud/CloudStorage 挂载、Photos 图库、Developer、.Trash 等）控制耗时；`~/Library/Application Support`（项目常驻处）不跳。外置卷不默认扫，用 `--roots /Volumes/卷名` 追加。
+
+### 改进
+- **默认扫描根去机器特定化**（公开分发要求）：默认只扫通用的用户级 Agent 配置目录（`~/.agents/skills`、`~/.claude`、`~/.codex`、`~/.zcode`），移除上一版内置的本机项目根；项目级位置因人而异，一律用 `--roots` 显式传入或 `--full-home` 兜底，不做猜测。
+
+
 ## [1.8.0] - 2026-10-15
 
 ### 新增

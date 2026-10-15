@@ -2,7 +2,7 @@
 name: skill-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.8.0"
+version: "1.8.1"
 description: 管理 Claude Code、Codex、OpenClaw、WorkBuddy/CodeBuddy 和 QoderWork Skills 的安装、版本追踪、更新检查与项目 Agent 初始化。支持从本地路径或 GitHub 仓库安装，优先以项目 `.claude/skills` 为单一来源，并识别 `.codebuddy`、`.workbuddy` 等全局配置根，避免嵌套误装。
 license: Complete terms in LICENSE.txt
 ---
@@ -275,19 +275,29 @@ python3 scripts/relink-skill.py \
   --old /path/to/skills/old-name \
   --new /path/to/skills/new-name
 
-# 2. 历史快照目录（visualizations、post-freeze 等不再运行的现场）默认不修，用排除模式跳过
+# 2. 项目级安装位置因人而异，把你的项目根传进来（可多次）
+python3 scripts/relink-skill.py --old ... --new ... \
+  --roots ~/code/project-a --roots "~/Library/Application Support/MyProjects"
+
+# 3. 历史快照目录（visualizations、post-freeze 等不再运行的现场）默认不修，用排除模式跳过
 python3 scripts/relink-skill.py --old ... --new ... \
   --exclude-glob '*/visualizations/*' --exclude-glob '*/post-freeze/*'
 
-# 3. 确认计划无误后执行，并留 JSON 报告备查
+# 4. 确认计划无误后执行，并留 JSON 报告备查
 python3 scripts/relink-skill.py --old ... --new ... \
   --exclude-glob '*/visualizations/*' --apply --report /tmp/relink-report.json
+
+# 5. 不确定项目都在哪时，全盘扫描整个用户主目录
+#    （自动跳过 Caches/Containers/iCloud 挂载/图库等重资源区，耗时数分钟；
+#     外置卷另用 --roots /Volumes/卷名 追加，exFAT 不支持软链通常可略）
+python3 scripts/relink-skill.py --old ... --new ... --full-home \
+  --exclude-glob '*/visualizations/*' --exclude-glob '*/post-freeze/*'
 ```
 
 行为规则：
 
 - 只处理符号链接，不移动任何实体文件；默认 dry-run，`--apply` 才执行。
-- 扫描根内置用户级四个配置目录 + `~/Library/Application Support/maoscripts` + `~/orca/workspaces`，可用 `--roots` 追加或 `--roots-only` 覆盖；跳过 `.git`/`node_modules`/`__pycache__`/`venv`。
+- 默认扫描根只含通用的用户级 Agent 配置目录（`~/.agents/skills`、`~/.claude`、`~/.codex`、`~/.zcode`），不猜测项目位置；项目根用 `--roots` 显式传入，或 `--full-home` 全盘兜底；跳过 `.git`/`node_modules`/`__pycache__`/`venv`。
 - 链接名等于旧技能名（skills 安装链）：同目录已有新名链接则只删旧链，否则删旧链并以新名建新链。
 - 链接名不同（如 `night-watch.sh` 指向旧目录内脚本）：链接名不变，重指新路径；相对链接修复后保持相对形态，不把本机绝对路径写进仓库。
 - 修复后建议用 `record.py` 核对 registry（`assets/skill-registry.json`）里的 source 路径与 `name_migration_history`。
