@@ -1,5 +1,15 @@
 # 变更日志
 
+## [1.9.0] - 2026-10-16
+
+### 新增
+- **安装即登记（链接出生带建档）**：install.sh 创建符号链接的四个路径（单 skill/command/批量 skills 集合/批量 commands 集合）全部调用 record_install；record.py 的 record_install 把本次安装位置追加进 registry `install_links`（幂等去重、保留历史登记不被覆盖）。经 skill-manager 安装的链接从此天然进建档，改名时 `relink-skill.py --from-registry` 直接查表，无需事后 `--register` 补录；手工建的链接仍可用 --register 兜底。
+- record.py 的 registry 路径支持 `SKILL_MANAGER_REGISTRY` 环境变量覆盖（与 relink-skill.py 一致，测试/非标准安装位置）。
+
+### 验证
+- 端到端：install.sh 安装 → registry 自动含 install_links（via=install）→ 源目录改名 → relink --from-registry 0.0s 修复并回写新名条目 → 重复安装同位置去重（links 恒 1）。
+
+
 ## [1.8.4] - 2026-10-15
 
 ### 改进

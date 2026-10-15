@@ -2,7 +2,7 @@
 name: skill-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.8.4"
+version: "1.9.0"
 description: 管理 Claude Code、Codex、OpenClaw、WorkBuddy/CodeBuddy 和 QoderWork Skills 的安装、版本追踪、更新检查与项目 Agent 初始化。支持从本地路径或 GitHub 仓库安装，优先以项目 `.claude/skills` 为单一来源，并识别 `.codebuddy`、`.workbuddy` 等全局配置根，避免嵌套误装。
 license: Complete terms in LICENSE.txt
 ---
@@ -313,7 +313,7 @@ python3 scripts/relink-skill.py --old /旧目录 --new /新目录 --from-registr
 - Spotlight（mdfind）不能用于此场景：实测不索引符号链接，勿走此路。
 - 链接名等于旧技能名（skills 安装链）：同目录已有新名链接则只删旧链，否则删旧链并以新名建新链。
 - 链接名不同（如 `night-watch.sh` 指向旧目录内脚本）：链接名不变，重指新路径；相对链接修复后保持相对形态，不把本机绝对路径写进仓库。
-- **登记优先，扫描兜底**：`--register` 把链接位置写进 registry `install_links`（位置导向，target 变了不影响下次查表）；`--apply` 修复后也会自动登记。`--from-registry` 直接查表定位（毫秒级、零扫描），无登记时自动回退浅层扫描并提示。registry 路径可用环境变量 `SKILL_MANAGER_REGISTRY` 覆盖。
+- **登记优先，扫描兜底**：经本 skill 安装的链接**安装即登记**（install.sh 自动写 registry `install_links`，无需事后补录）；`--register` 兜底手工建的链接；`--apply` 修复后也会自动登记。`--from-registry` 直接查表定位（毫秒级、零扫描），无登记时自动回退浅层扫描并提示。registry 路径可用环境变量 `SKILL_MANAGER_REGISTRY` 覆盖。
 - 原理说明：符号链接是单向路径字符串，文件系统不维护"谁指向我"的反向索引（Spotlight 也不索引符号链接），所以"按目标文件夹反查链接"只能靠登记表（registry）或遍历——本工具四类来源（registry/浅层/递归/全盘）即按此成本分级。
 - 修复后建议用 `record.py` 核对 registry（`assets/skill-registry.json`）里的 source 路径与 `name_migration_history`。
 
