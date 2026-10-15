@@ -1,5 +1,11 @@
 # 变更日志
 
+## [1.8.3] - 2026-10-15
+
+### 新增
+- **relink-skill.py 登记优先模式（`--register` / `--from-registry`）**：回答"能否按目标文件夹反查其符号链接位置"——文件系统不维护反向索引（symlink 是单向字符串、Spotlight 不索引），唯一秒级路径是登记表。`--register` 把链接位置写入 registry `install_links`（位置导向）；`--apply` 修复后自动登记；`--from-registry` 下次改名直接查表定位（实测 0.23s 含修复与回写），无登记自动回退浅层扫描。registry 路径支持 `SKILL_MANAGER_REGISTRY` 环境变量覆盖（测试/非标准安装位置）。
+
+
 ## [1.8.2] - 2026-10-15
 
 ### 改进

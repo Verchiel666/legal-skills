@@ -24,6 +24,14 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
+
+# registry 与脚本相对位置（skills/skill-manager/assets/skill-registry.json，本地文件可能不存在）；
+# 可用环境变量 SKILL_MANAGER_REGISTRY 覆盖（测试或非标准安装位置）
+REGISTRY_PATH = os.environ.get(
+    "SKILL_MANAGER_REGISTRY",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 "..", "assets", "skill-registry.json"))
 
 # 默认只扫通用的用户级 Agent 配置目录（对任何机器成立）；
 # 项目级安装位置因人而异，用 --roots 追加或 --full-home 全盘兜底，不内置猜测。
@@ -65,6 +73,12 @@ def parse_args():
                          "外置卷请另用 --roots /Volumes/xxx 追加")
     ap.add_argument("--exclude-glob", action="append", default=[],
                     help="fnmatch 排除模式（可多次），命中的链接跳过，如 '*/visualizations/*'")
+    ap.add_argument("--from-registry", action="store_true",
+                    help="不扫描：直接读 skill-registry.json 里登记的安装位置逐个检查（毫秒级；"
+                         "registry 无记录时自动回退浅层扫描并提示）")
+    ap.add_argument("--register", action="store_true",
+                    help="只登记不修复：把扫描到的指向 --new 的活链接写入 registry install_links，"
+                         "供下次改名 --from-registry 秒查")
     ap.add_argument("--apply", action="store_true", help="执行修复（默认 dry-run 只打印计划）")
     ap.add_argument("--report", help="把扫描与修复结果写为 JSON 报告（追溯用）")
     ap.add_argument("--quiet", action="store_true", help="不打印逐条进度")
@@ -73,6 +87,54 @@ def parse_args():
 
 def expand(path):
     return os.path.abspath(os.path.expanduser(path))
+
+
+def load_registry():
+    try:
+        with open(REGISTRY_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_registry(registry):
+    os.makedirs(os.path.dirname(expand(REGISTRY_PATH)), exist_ok=True)
+    with open(expand(REGISTRY_PATH), "w") as f:
+        json.dump(registry, f, ensure_ascii=False, indent=2)
+
+
+def registry_link_paths(registry, *roots):
+    """收集 source 指向任一 root 的技能条目里登记过的安装位置。"""
+    paths = []
+    for rec in registry.values():
+        if not isinstance(rec, dict):
+            continue
+        src = rec.get("source") or ""
+        if any(src == r or src.startswith(r + os.sep) for r in roots if r):
+            for item in rec.get("install_links") or []:
+                p = item.get("path") if isinstance(item, dict) else item
+                if p:
+                    paths.append(p)
+    return paths
+
+
+def register_links(registry, new, links, note="relink"):
+    """把链接位置登记到新技能名条目的 install_links（幂等，保留原登记时间）。"""
+    name = os.path.basename(new.rstrip("/"))
+    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    rec = registry.get(name)
+    if not isinstance(rec, dict):
+        rec = {"name": name, "source": new, "install_type": "local",
+               "installed_at": now, "last_updated": now}
+        registry[name] = rec
+    else:
+        rec["source"] = new
+    known = {i.get("path") for i in rec.get("install_links", []) if isinstance(i, dict)}
+    for link, target in links:
+        if link not in known:
+            rec.setdefault("install_links", []).append(
+                {"path": link, "target": target, "recorded_at": now, "via": note})
+    rec["last_updated"] = now
 
 
 def resolve_target(link_path, target):
@@ -201,12 +263,25 @@ def main():
     if not os.path.isdir(new):
         print(f"错误: 新路径不存在: {new}", file=sys.stderr)
         return 2
-    if old == new:
-        print("错误: --old 与 --new 相同", file=sys.stderr)
+    # --register 允许 old==new（改名已完成、纯补登记：命中前缀即当前路径）
+    if old == new and not args.register:
+        print("错误: --old 与 --new 相同（仅 --register 补登记时允许）", file=sys.stderr)
         return 2
 
-    # 三档：浅层（默认，毫秒级）→ --deep 递归 → --full-home 全盘
-    if args.full_home:
+    # 链接来源四类：--from-registry 登记表（最快）→ 浅层（默认）→ --deep 递归 → --full-home 全盘
+    registry = load_registry()
+    if args.from_registry:
+        known_paths = registry_link_paths(registry, old, new)
+        if known_paths:
+            link_iter = (p for p in known_paths if os.path.islink(p))
+            roots = [f"registry({len(known_paths)} 处)"]
+        else:
+            if not args.quiet:
+                print("registry 无该技能的 install_links 登记，回退浅层扫描", file=sys.stderr)
+            raw = ([] if args.roots_only else [os.path.join(expand("~"), h) for h in HARNESS_DIRS]) + args.roots
+            roots = resolve_harness_roots(raw)
+            link_iter = iter_shallow(roots)
+    elif args.full_home:
         home = expand("~")
         roots = [home] + [expand(r) for r in args.roots]
         link_iter = iter_symlinks(roots, args.quiet, SKIP_DIRS | FULL_HOME_SKIP_NAMES)
@@ -241,7 +316,9 @@ def main():
     results = []
     for item in findings:
         act = item["action"]
-        if not args.apply:
+        if args.register:
+            status = "REGISTER"  # 只登记位置，绝不执行修复
+        elif not args.apply:
             status = "PLAN"
         elif act == "remove_old":
             os.remove(item["link"]); status = "REMOVED"
@@ -261,6 +338,20 @@ def main():
     mode = "APPLY" if args.apply else "DRY-RUN"
     print(f"\n{mode}: 命中 {len(findings)} 条（悬空 {sum(1 for i in findings if i['dangling'])}），"
           f"排除 {len(skipped)} 条，根 {len(roots)} 个，耗时 {time.time()-t0:.1f}s")
+
+    # --register 或 --apply 后：把链接位置登记进 registry，下次改名可 --from-registry 直接查表
+    if args.register or args.apply:
+        to_register = []
+        for item in findings:
+            # 登记的是位置：apply 后取新链接，register/预登记取原链接
+            link = item.get("new_link") if (args.apply and item.get("new_link")) else item["link"]
+            target = item.get("new_target") or item["old_target"]
+            to_register.append((link, target))
+        if to_register:
+            register_links(registry, new, to_register,
+                           note="relink-apply" if args.apply else "register")
+            save_registry(registry)
+            print(f"registry 登记: {len(to_register)} 处链接位置 → install_links（下次 --from-registry 直接查表）")
     if args.report:
         with open(args.report, "w") as f:
             json.dump({"old": old, "new": new, "mode": mode, "roots": roots,
