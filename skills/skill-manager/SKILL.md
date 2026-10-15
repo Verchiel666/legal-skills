@@ -2,7 +2,7 @@
 name: skill-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.7.2"
+version: "1.8.0"
 description: 管理 Claude Code、Codex、OpenClaw、WorkBuddy/CodeBuddy 和 QoderWork Skills 的安装、版本追踪、更新检查与项目 Agent 初始化。支持从本地路径或 GitHub 仓库安装，优先以项目 `.claude/skills` 为单一来源，并识别 `.codebuddy`、`.workbuddy` 等全局配置根，避免嵌套误装。
 license: Complete terms in LICENSE.txt
 ---
@@ -264,6 +264,33 @@ skill-manager update claude-code
 # 查看安装记录
 python3 scripts/record.py list
 ```
+
+## 改名后的本机软链收敛
+
+skill 目录改名或迁移后（如 `multi-agent-orchestration` → `multi-agent-orca`），本机用户级（`~/.claude`、`~/.codex`、`~/.agents`、`~/.zcode`）与项目级（各项目 `.claude/skills/` 等）配置目录里会残留指向旧路径的符号链接。用 `scripts/relink-skill.py` 有界扫描并批量修复：
+
+```bash
+# 1. 先 dry-run 看计划（默认只打印，不动任何链接）
+python3 scripts/relink-skill.py \
+  --old /path/to/skills/old-name \
+  --new /path/to/skills/new-name
+
+# 2. 历史快照目录（visualizations、post-freeze 等不再运行的现场）默认不修，用排除模式跳过
+python3 scripts/relink-skill.py --old ... --new ... \
+  --exclude-glob '*/visualizations/*' --exclude-glob '*/post-freeze/*'
+
+# 3. 确认计划无误后执行，并留 JSON 报告备查
+python3 scripts/relink-skill.py --old ... --new ... \
+  --exclude-glob '*/visualizations/*' --apply --report /tmp/relink-report.json
+```
+
+行为规则：
+
+- 只处理符号链接，不移动任何实体文件；默认 dry-run，`--apply` 才执行。
+- 扫描根内置用户级四个配置目录 + `~/Library/Application Support/maoscripts` + `~/orca/workspaces`，可用 `--roots` 追加或 `--roots-only` 覆盖；跳过 `.git`/`node_modules`/`__pycache__`/`venv`。
+- 链接名等于旧技能名（skills 安装链）：同目录已有新名链接则只删旧链，否则删旧链并以新名建新链。
+- 链接名不同（如 `night-watch.sh` 指向旧目录内脚本）：链接名不变，重指新路径；相对链接修复后保持相对形态，不把本机绝对路径写进仓库。
+- 修复后建议用 `record.py` 核对 registry（`assets/skill-registry.json`）里的 source 路径与 `name_migration_history`。
 
 ## 安全检查
 

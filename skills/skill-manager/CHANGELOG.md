@@ -1,5 +1,15 @@
 # 变更日志
 
+## [1.8.0] - 2026-10-15
+
+### 新增
+- **改名后的本机软链收敛工具 `scripts/relink-skill.py`**：skill 目录改名/迁移后，有界扫描用户级（~/.claude/.codex/.agents/.zcode）与项目级（maoscripts、~/orca/workspaces）配置根，找出指向旧路径的符号链接并批量修复。默认 dry-run，--apply 执行，--exclude-glob 跳过历史快照，--report 输出 JSON 追溯报告。来源：multi-agent-orca v3.0.1 改名实战（40 链接盘点、13 处手工修复暴露的链式断链问题）。
+
+### 技术优化
+- 目录级符号链接纳入扫描（os.walk 将其归入 dirnames 而非 filenames，须单独检查，否则 skills 安装链全部漏扫）；相对链接修复后保持相对形态，避免把本机绝对路径写进仓库内相对链接。
+- 分类修复策略：同名安装链在目标已有新名链接时只删旧链，无异名脚本链（如 night-watch.sh）保持链接名重指新路径。
+
+
 ## [1.7.2] - 2026-08-13
 
 ### 改进
