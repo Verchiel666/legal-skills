@@ -11,9 +11,11 @@
   python3 relink-skill.py --old /path/to/old-skill-dir --new /path/to/new-skill-dir
   python3 relink-skill.py --old ... --new ... --apply --report /tmp/relink-report.json
   python3 relink-skill.py --old ... --new ... --exclude-glob '*/visualizations/*'
-  # 项目不在用户级配置目录时：
+  # 项目不在用户级配置目录时，把项目根传进来（浅层查其 .claude/.codex 等子目录）：
   python3 relink-skill.py --old ... --new ... --roots /path/to/project-a --roots /path/to/project-b
-  # 或全盘扫描整个用户主目录：
+  # 三档扫描深度：浅层（默认，毫秒级，查配置根顶层+skills/+commands/）
+  #              → --deep（对根完整递归）
+  #              → --full-home（整个用户主目录，穷尽兜底，耗时长）
   python3 relink-skill.py --old ... --new ... --full-home
 """
 import argparse
@@ -25,12 +27,10 @@ import time
 
 # 默认只扫通用的用户级 Agent 配置目录（对任何机器成立）；
 # 项目级安装位置因人而异，用 --roots 追加或 --full-home 全盘兜底，不内置猜测。
-DEFAULT_ROOTS = [
-    "~/.agents/skills",
-    "~/.claude",
-    "~/.codex",
-    "~/.zcode",
-]
+HARNESS_DIRS = [".claude", ".codex", ".agents", ".zcode", ".openclaw",
+                ".workbuddy", ".qoderworkcn", ".codebuddy"]
+# 每个配置根内只看这些子目录一层（安装链 99% 挂在这）+ 根顶层（脚本链）
+HARNESS_SUBDIRS = ["skills", "commands"]
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".Trash"}
 
 # --full-home 模式追加跳过的目录名：确定不承载 Agent 配置/项目代码的重资源区，
@@ -57,8 +57,11 @@ def parse_args():
     ap.add_argument("--roots", action="append", default=[],
                     help="追加扫描根（可多次，如各项目根目录）；路径以 ~ 开头会展开")
     ap.add_argument("--roots-only", action="store_true", help="只用 --roots 提供的根，忽略内置默认根")
+    ap.add_argument("--deep", action="store_true",
+                    help="对扫描根完整递归（默认只浅层查 skills/commands/根顶层，毫秒级；"
+                         "深链只出现在历史快照/归档里，一般无需 --deep）")
     ap.add_argument("--full-home", action="store_true",
-                    help="全盘扫描整个用户主目录（替代默认 6 根；自动跳过 Caches/Containers/iCloud 等重资源区），"
+                    help="全盘扫描整个用户主目录（穷尽兜底，耗时可能很长；自动跳过 Caches/Containers/iCloud 等重资源区），"
                          "外置卷请另用 --roots /Volumes/xxx 追加")
     ap.add_argument("--exclude-glob", action="append", default=[],
                     help="fnmatch 排除模式（可多次），命中的链接跳过，如 '*/visualizations/*'")
@@ -77,6 +80,51 @@ def resolve_target(link_path, target):
     if target.startswith("/"):
         return os.path.normpath(target)
     return os.path.normpath(os.path.join(os.path.dirname(link_path), target))
+
+
+def iter_shallow(harness_roots):
+    """浅层模式：只看每个配置根的顶层 + skills/ + commands/ 一层。
+
+    真实消费者链接（安装链、脚本链）几乎全挂在这几层；更深的链接
+    属于历史快照/归档，默认不碰。毫秒级完成。
+    """
+    for root in harness_roots:
+        root = expand(root)
+        try:
+            for entry in os.scandir(root):
+                if entry.is_symlink():
+                    yield entry.path
+        except OSError:
+            continue
+        for sub in HARNESS_SUBDIRS:
+            d = os.path.join(root, sub)
+            try:
+                for entry in os.scandir(d):
+                    if entry.is_symlink():
+                        yield entry.path
+            except OSError:
+                continue
+
+
+def default_harness_roots(extra_roots):
+    """默认根：8 类 harness 的用户级目录 + 调用方传入的根。"""
+    home = expand("~")
+    roots = [os.path.join(home, h) for h in HARNESS_DIRS]
+    roots += [expand(r) for r in extra_roots]
+    return roots
+
+
+def resolve_harness_roots(raw_roots):
+    """浅层模式的根解析：basename 是 harness 名（如 .claude）的当配置根直用，
+    否则视为项目根，展开为其 8 个 harness 子目录。"""
+    out = []
+    for r in raw_roots:
+        r = expand(r)
+        if os.path.basename(r) in HARNESS_DIRS:
+            out.append(r)
+        else:
+            out += [os.path.join(r, h) for h in HARNESS_DIRS]
+    return out
 
 
 def iter_symlinks(roots, quiet, skip_names=None):
@@ -157,21 +205,26 @@ def main():
         print("错误: --old 与 --new 相同", file=sys.stderr)
         return 2
 
+    # 三档：浅层（默认，毫秒级）→ --deep 递归 → --full-home 全盘
     if args.full_home:
         home = expand("~")
         roots = [home] + [expand(r) for r in args.roots]
-        skip_names = SKIP_DIRS | FULL_HOME_SKIP_NAMES
-    elif args.roots_only:
-        roots = [expand(r) for r in args.roots]
-        skip_names = None
+        link_iter = iter_symlinks(roots, args.quiet, SKIP_DIRS | FULL_HOME_SKIP_NAMES)
+    elif args.deep:
+        if args.roots_only:
+            roots = [expand(r) for r in args.roots]
+        else:
+            roots = default_harness_roots(args.roots)
+        link_iter = iter_symlinks(roots, args.quiet)
     else:
-        roots = [expand(r) for r in DEFAULT_ROOTS] + [expand(r) for r in args.roots]
-        skip_names = None
+        raw = ([] if args.roots_only else [os.path.join(expand("~"), h) for h in HARNESS_DIRS]) + args.roots
+        roots = resolve_harness_roots(raw)
+        link_iter = iter_shallow(roots)
     # 旧目录已删除是常态（先退役再收敛）；扫描不要求它存在
 
     findings, skipped = [], []
     t0 = time.time()
-    for link in iter_symlinks(roots, args.quiet, skip_names):
+    for link in link_iter:
         try:
             target = os.readlink(link)
         except OSError:

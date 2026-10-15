@@ -1,5 +1,13 @@
 # 变更日志
 
+## [1.8.2] - 2026-10-15
+
+### 改进
+- **relink-skill.py 扫描改三档分级，默认档提速数千倍**：默认浅层只查 8 类用户级 harness（.claude/.codex/.agents/.zcode/.openclaw/.workbuddy/.qoderworkcn/.codebuddy）与 --roots 项目根各自的顶层、skills/、commands/ 一层，毫秒级完成（实测 16 根 0.05s，对比全盘 20 分钟+）；`--deep` 完整递归；`--full-home` 全盘兜底不变。依据：真实消费者链接全部挂在配置根浅层，深层链接属于历史快照/归档（40 链接实测清单验证）。
+- --roots 传项目根时自动展开按 `<项目>/<harness>/` 浅层检查，传 harness 根（basename 为 .claude 等）则直用；--deep --roots-only 只递归指定根。
+- 明确记录：Spotlight（mdfind）实测不索引符号链接（存量查询只返回实体目录、新建链接不出现），不能作为快路径，勿再尝试。
+
+
 ## [1.8.1] - 2026-10-15
 
 ### 新增

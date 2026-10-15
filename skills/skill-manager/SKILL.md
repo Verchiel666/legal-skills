@@ -2,7 +2,7 @@
 name: skill-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "1.8.1"
+version: "1.8.2"
 description: 管理 Claude Code、Codex、OpenClaw、WorkBuddy/CodeBuddy 和 QoderWork Skills 的安装、版本追踪、更新检查与项目 Agent 初始化。支持从本地路径或 GitHub 仓库安装，优先以项目 `.claude/skills` 为单一来源，并识别 `.codebuddy`、`.workbuddy` 等全局配置根，避免嵌套误装。
 license: Complete terms in LICENSE.txt
 ---
@@ -297,7 +297,15 @@ python3 scripts/relink-skill.py --old ... --new ... --full-home \
 行为规则：
 
 - 只处理符号链接，不移动任何实体文件；默认 dry-run，`--apply` 才执行。
-- 默认扫描根只含通用的用户级 Agent 配置目录（`~/.agents/skills`、`~/.claude`、`~/.codex`、`~/.zcode`），不猜测项目位置；项目根用 `--roots` 显式传入，或 `--full-home` 全盘兜底；跳过 `.git`/`node_modules`/`__pycache__`/`venv`。
+- **三档扫描深度**（按需选，日常用默认档即可）：
+  | 档位 | 命令 | 范围 | 耗时量级 |
+  |------|------|------|----------|
+  | 浅层（默认） | 无参数 | 8 类用户级 harness（`.claude`/`.codex`/`.agents`/`.zcode`/`.openclaw`/`.workbuddy`/`.qoderworkcn`/`.codebuddy`）+ `--roots` 项目根，各自只查顶层、`skills/`、`commands/` 一层 | 毫秒级 |
+  | 递归 | `--deep` | 对上述根完整递归（覆盖深埋链接） | 秒-分钟级 |
+  | 全盘 | `--full-home` | 整个用户主目录（跳过 Caches/Containers/iCloud 挂载/图库等重资源区） | 可达数十分钟 |
+- 浅层假设的依据：真实消费者链接（安装链、脚本链）都挂在配置根浅层；更深的链接几乎都是历史快照/归档，默认不碰、需要时 `--deep`。
+- 不猜测项目位置（公开分发要求）：项目根一律 `--roots` 显式传入；传入项目根自动按 `<项目>/<harness>/` 浅层检查，传 harness 根则直用。
+- Spotlight（mdfind）不能用于此场景：实测不索引符号链接，勿走此路。
 - 链接名等于旧技能名（skills 安装链）：同目录已有新名链接则只删旧链，否则删旧链并以新名建新链。
 - 链接名不同（如 `night-watch.sh` 指向旧目录内脚本）：链接名不变，重指新路径；相对链接修复后保持相对形态，不把本机绝对路径写进仓库。
 - 修复后建议用 `record.py` 核对 registry（`assets/skill-registry.json`）里的 source 路径与 `name_migration_history`。
