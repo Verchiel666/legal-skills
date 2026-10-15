@@ -830,7 +830,7 @@ blocker_and_recovery:
 
 ## TASK-2026-10-02-SKILL-NAME-MIGRATION — multi-agent-orca 名称迁移
 
-- 状态：`IMPLEMENTED_LOCAL / DRAFT_PR_OPEN / LEGACY_PRESERVED`（2026-10-15）；Owner / writer / 集成者：Codex /root。原计划来源：原MAO Codex PM。来源：真人指定新名multi-agent-orca，要求完善迁移计划写在Skill内部，特别覆盖符号链接。
+- 状态：`MERGED_PR303 / LEGACY_RETIRED_3.0.1`（2026-10-15）；Owner / writer / 集成者：Codex /root。3.0.1 收口：PR #303 已合并 main（3309cb21）；用户拍板 M5 提前执行——冻结兼容目录整体退役删除，私人 config 与历史 archive 并入新目录，断链 hook/skill_root/登记表修复，wire schema/状态路径兼容面保持，证据见 CHANGELOG 3.0.1 与 DEC-20261015-LEGACY-DIR-RETIREMENT。原计划来源：原MAO Codex PM。来源：真人指定新名multi-agent-orca，要求完善迁移计划写在Skill内部，特别覆盖符号链接。
 - 当前交付：命名实施已在本机采用，15 个全局/项目安装根可发现新名称；云端交付为草稿 PR #303。旧目录保留冻结运行时，无 SKILL.md；私人配置单一来源保留。正式合并/发布及旧兼容退役未获本轮授权，继续保持待办。
 - 已确认：盘点时源2.35.4与registry2.28.0不同，写计划期间另一GUI会话已更新源2.36.0，保持其改动、实施前重新冻结基线；只读有界扫描及深度3补盘发现40链接访问路径/22实际链接对象、44实体访问路径/22canonical实体根（含主源/其他Git检出/项目副本，须按owner分类，不能当作22份待覆盖安装）。全局3入口指向同源；套件必须同时改链接成员basename与target，CI/.gitignore及当前消费者/发布索引需同步。原#248此时OPEN/DRAFT/CONFLICTING，实施前先沿原卡对齐；不以更名绕过facts/smoke欠账。
 - 范围：规划新权威目录/元数据、宿主发现与兼容、CAS链接工具、静态副本保护、原worker凭证与状态保留、缓存/job/远程/渠道迁移、发布包、回退及旧入口退役；当前不实施这些工程或执行真实切换。

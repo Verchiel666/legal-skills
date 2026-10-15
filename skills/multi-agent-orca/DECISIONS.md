@@ -151,3 +151,12 @@ MiniMax `exec` 是已读取完整输入的非交互运行，不存在待输入�
 ## DEC-20261015-NAME-MIGRATION — 单一发现入口与冻结运行时
 
 选择新目录作为唯一权威 Skill，旧目录冻结并移除 SKILL.md 发现入口（保留为 .snapshot）。不采用整目录 symlink，因为它会改变 canonical helper/reference 路径，且双链接可能导致宿主重复发现。保留旧脚本、config、references、templates 的原路径与字节，供现有凭证完成原生命周期；新实现不得回写旧冻结目录。名称变更不修改 wire schema、环境变量、状态及账号授权。兼容目录会增加分发体积，但可以避免强迁在途任务；退役以登记任务结算和原消费者迁移为条件，不以经过固定天数自动删除。
+
+
+## DEC-20261015-LEGACY-DIR-RETIREMENT — 退役冻结兼容目录，单一目录收敛
+
+- 背景：3.0.0 改名采用"新目录 + 旧目录冻结兼容"双目录方案（见 DEC-20261015-NAME-MIGRATION）。用户复盘指出该实现等价于复制而非改名：云端/仓库仍能看到旧名目录，收敛不彻底，要求"改就改全面"。
+- 决策：整体删除 `skills/multi-agent-orchestration/`。gitignored 私人 config 实体（7 个 provider/编排配置）迁入新目录替换软链；28 项历史 archive 并入新目录；`SKILL.md.snapshot` 与冻结 README 随目录删除（原文仍在 git 历史 5173907f 可溯）。
+- 保留兼容面：wire schema 字面量（`multi-agent-orchestration.*.v1`）、`MAO_*`/`MULTI_AGENT_ORCHESTRATION_PERSONAL_CONFIG` 环境变量、`~/.local/state/multi-agent-orchestration/` 状态树、lease/night-watch 临时目录路径一律不改，不创建第二状态树；`skill-name-migration.py` 的 OLD 常量与 git 历史负对照夹具保留。
+- 理由与边界：改名语义上仓库只应存在一个目录名；历史证据靠 git 历史、release 资产与 archive 承载，不靠活目录。在途任务如仍引用旧绝对路径，先迁移再派发（SKILL.md 名称迁移章节已声明）。
+- 取代关系：本决策在目录处置上取代 DEC-20261015-NAME-MIGRATION 的"保留冻结目录"条款；该决策中 wire schema/状态路径兼容条款继续有效。
