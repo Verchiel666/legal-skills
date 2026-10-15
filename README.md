@@ -34,6 +34,7 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-15 | 更新 | [skill-manager](skills/skill-manager/) | v1.8.0 | 新增改名软链收敛工具 relink-skill.py：改名后有界扫描用户级与项目级配置根，分类修复指向旧路径的悬空软链（默认 dry-run、可排除历史快照）；源码待发布。 |
 | 2026-10-15 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.8.1 | 审计批次 A+B/C：快照完整性守卫与 9 项缺陷修复；Agent 只读查询接口（recent/interests/match/evidence/evidence-fetch/research，JSON envelope）与机会卡反馈闭环；快照补 repo 数字主键 id（改名锚定，下游切换前置）。 |
 | 2026-10-15 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.0.1 | 退役删除冻结兼容旧目录，仓库收敛为单一目录名；私人配置与历史 archive 并入新目录，修复断链 hook 与 skill_root；wire schema 与状态路径兼容不变。 |
 | 2026-10-15 | 更新 | [video-screenshot](skills/video-screenshot/) | v1.2.0 | Task-039：滚动文字模式加 `--deadline-seconds` 墙钟预算与 `--resume-from` 批次级恢复（帧字节等值才复用、恢复终稿逐字节一致），成本预估登记；含 v1.1.3 正文裁边/跨页重复/来源校验修复。源码待发布。 |
@@ -41,7 +42,6 @@
 | 2026-10-13 | 更新 | [judgment-analysis](skills/judgment-analysis/) | v2.0.0 | 由 litigation-analysis 更名：职责已收敛为单份判决深析，调用名与目录名对齐；legal-case-analysis 等引用同步更新，下载仍为旧名 1.4.0 包。 |
 | 2026-10-13 | 更新 | [case-progress](skills/case-progress/) | v0.9.0 | 补齐快递登记、状态回写与 show 邮寄列表；来源保护、日期与凭证路径校验及合成 CLI 回归，源码待发布。 |
 | 2026-10-13 | 更新 | [img2pdf](skills/img2pdf/) | v1.3.1 | 补充逐图六步执行卡、不同页位置示意、坐标换算算例和失败修正表，减少多模态模型裁切时的隐含判断；源码待发布。 |
-| 2026-10-12 | 新上传 | [express-tracking](skills/express-tracking/) | v0.2.1 | 快递邮寄跟踪与证据留痕（EMS/顺丰官网轨迹+水印 PDF 凭证归档）；登录态持久化与 trusted 输入反风控；首次公开登记。 |
 
 </details>
 
