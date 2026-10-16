@@ -24,9 +24,13 @@ except ImportError:
 from scroll_ocr import LocalOCR, OCRFailure
 
 SCHEMA = 'video-screenshot-scroll/1'
-TIME = re.compile(r'^(?:[01]?\d|2[0-3]):[0-5]\d(?:[:.][0-5]\d)?$')
+# Resume reuse requires identical recognition-affecting parameters. The frozen
+# roi_mode key maps to this CLI's --roi (None = automatic conservative crop).
+RESUME_KEYS = ('engine', 'batch_size', 'interval', 'roi')
+TIME_PATTERN = r'\d{1,3}:[0-5]\d(?:[:.][0-5]\d)?'
+TIME = re.compile('^'+TIME_PATTERN+'$')
 UI = re.compile(r'^(?:文字记录|原始记录|转录|全文|会议记录|Transcript|Transcription|Text|返回|Back|分享|Share|搜索|Search|播放|暂停|录音|总结|摘要)$', re.I)
-SPEAKER = re.compile(r'^(?:我|其他|说话人\s*\d+|speaker\s*\d+|[A-Za-z][\w -]{0,18})$', re.I)
+SPEAKER = re.compile(r'^(?:我|其他|说话人\s*\d+|speaker\s*\d+|[\u3400-\u9fff]{2,8}|[A-Za-z][\w -]{0,18})$', re.I)
 
 
 def dump(path, data):
@@ -96,7 +100,7 @@ def fixed_box(image, neighbors, box):
     bounds=(max(0,int(box[0]*w)-2),max(0,int(box[1]*h)-2),min(w,int(box[2]*w)+2),min(h,int(box[3]*h)+2))
     current=image.crop(bounds).convert('RGB')
     compatible=[other for other in neighbors if other.size==image.size]
-    return bool(compatible) and all(ImageStat.Stat(ImageChops.difference(current,other.crop(bounds).convert('RGB'))).mean[0]<1.0 for other in compatible)
+    return bool(compatible) and all(max(ImageStat.Stat(ImageChops.difference(current,other.crop(bounds).convert('RGB'))).mean)<1.0 for other in compatible)
 
 
 def select_roi(image, neighbors, lines, explicit=None):
@@ -158,6 +162,17 @@ def select_roi(image, neighbors, lines, explicit=None):
         for x in lines:
             if x['bbox'][1]*height < bottom < x['bbox'][3]*height:
                 bottom = max(bottom, min(height, int(x['bbox'][3]*height+height*.01)))
+    # A stationary OCR line is still content. Motion identifies a candidate band,
+    # never permission to discard whole non-UI lines outside it.
+    if top:
+        protected = [x for x in lines if x not in anchors and x['bbox'][3]*height > anchor_bottom]
+        if protected:
+            top = min(top, max(0, math.floor(min(x['bbox'][1] for x in protected)*height-height*.01)))
+    if bottom < height:
+        footer_top = min(x['bbox'][1]*height for x in footers)
+        protected = [x for x in lines if x not in footers and x['bbox'][1]*height < footer_top]
+        if protected:
+            bottom = max(bottom, min(height, math.ceil(max(x['bbox'][3] for x in protected)*height+height*.01)))
     if top == 0 and bottom == height:
         fallback['reason'] = 'no_confirmed_outer_ui'
         return fallback
@@ -179,7 +194,7 @@ def observations(lines, frame):
         if SPEAKER.fullmatch(text) and i+1 < len(lines) and TIME.fullmatch(lines[i+1]['text'].strip()):
             speaker, page_time, used = text, lines[i+1]['text'].strip(), 2
         else:
-            combined = re.fullmatch(r'(.{1,20}?)\s+((?:[01]?\d|2[0-3]):[0-5]\d(?:[:.][0-5]\d)?)', text)
+            combined = re.fullmatch(r'(.{1,20}?)\s+('+TIME_PATTERN+')', text)
             if combined:
                 speaker, page_time = combined.groups()
         if page_time:
@@ -201,7 +216,7 @@ def observations(lines, frame):
             if line['confidence'] is not None:
                 current['confidence_values'].append(line['confidence'])
         i += 1
-    return [x for x in result if x['text']]
+    return [x for x in result if x['text'] or x['header_refs']]
 
 
 def ref(frame, line):
@@ -217,6 +232,9 @@ def stitch(pages):
     """Sequence-aligned observations, never a global set of identical texts."""
     blocks, issues = [], []
     for frame, obs in pages:
+        issues.extend({'kind': 'header_without_body', 'frame': frame['id'],
+                       'page_time': item['page_time'], 'speaker': item['speaker'],
+                       'header_refs': item['header_refs']} for item in obs if not item['text'])
         if not obs:
             issues.append({'kind': 'empty_ocr', 'frame': frame['id']})
             continue
@@ -241,6 +259,20 @@ def stitch(pages):
         mapping = {}
         for m in anchors:
             mapping.update({m.b+j: m.a+j for j in range(m.size)})
+        # Equal long readings in different sequence positions are not identity.
+        # A crossing exact match gives a competing order: preserve both screens
+        # for review rather than committing SequenceMatcher's arbitrary tie.
+        crossed = any(
+            len(key(item['text'])) >= 24 and j not in mapping and
+            any(sig == signature(item) and any((j-k)*(i-v) <= 0 for k,v in mapping.items())
+                for i,sig in enumerate(a))
+            for j,item in enumerate(obs))
+        if crossed:
+            issues.append({'kind': 'ambiguous_sequence_alignment', 'frame': frame['id'],
+                           'reason': 'competing_exact_context_order; retained observations without merging'})
+            for item in obs:
+                add_block(blocks, item, uncertain=True)
+            continue
         # Only compare variants at positions fixed by neighboring sequence anchors.
         for j, item in enumerate(obs):
             if j in mapping:
@@ -329,13 +361,16 @@ def merge_observation(block, item):
 
 def make_review(root, frames, issues, max_groups, max_images):
     chosen, used = [], set()
-    # Boundary and layout questions first, then dispersed alignment/reading questions.
-    candidates = [(f['id'], '裁区是否保留首尾行和标签？') for f in frames if f['roi']['boundary_lines']]
-    candidates += [(f['id'], '自动正文裁区是否排除了固定控件且保留正文？') for f in frames if f['roi']['method'] != 'explicit']
+    # Specific missing-text/alignment questions take priority over generic ROI checks.
+    candidates = [(x.get('frame'), '此处有标签无正文或对齐疑点；逐图确认可见内容，不能按OCR猜补。')
+                  for x in issues if x.get('frame') and x['kind'] in
+                  ('header_without_body', 'ambiguous_sequence_alignment', 'empty_ocr')]
+    candidates += [(f['id'], '裁区是否保留首尾行和标签？') for f in frames if f['roi']['boundary_lines']]
     candidates += [(x.get('frame'), '相邻画面是否同一文字片段？只报告可见差异。') for x in issues if x.get('frame')]
-    if candidates:
-        step = max(1, len(candidates)//max(1, max_groups))
-        candidates = candidates[::step]+candidates
+    generic = [(f['id'], '自动正文裁区是否排除了固定控件且保留正文？') for f in frames if f['roi']['method'] != 'explicit']
+    if generic:
+        step = max(1, len(generic)//max(1, max_groups))
+        candidates += generic[::step]+generic
     lookup = {f['id']: i for i, f in enumerate(frames)}
     for fid, question in candidates:
         if fid not in lookup or len(chosen) >= max_groups:
@@ -368,8 +403,9 @@ def write_texts(root, blocks, issues, status):
         label = ' '.join(x for x in (b['page_time'], b['speaker']) if x)
         if b['uncertain_alignment']:
             label += ' [待核对齐]'
-        txt += [f"[{b['id']}] {label}", b['text'], '']
-        md += [f"## {b['id']} {label}", '', b['text'].replace('\n','  \n'), '']
+        reading = b['text'] or '〔仅识别到说话人/时间；正文未识别，待核〕'
+        txt += [f"[{b['id']}] {label}", reading, '']
+        md += [f"## {b['id']} {label}", '', reading.replace('\n','  \n'), '']
     (root/'transcript.txt').write_text('\n'.join(txt)+'\n', encoding='utf-8')
     (root/'transcript.md').write_text('\n'.join(md)+'\n', encoding='utf-8')
     with (root/'provenance.tsv').open('w', encoding='utf-8') as f:
@@ -384,10 +420,57 @@ def write_texts(root, blocks, issues, status):
     for x in issues:
         unresolved.append('- '+json.dumps(x, ensure_ascii=False))
     for b in blocks:
-        if len(b['variants']) > 1 or b['edge'] or b['uncertain_alignment']:
-            reason = '/'.join(x for x,flag in [('未对齐',b['uncertain_alignment']),('读数变体',len(b['variants'])>1),('边界行',b['edge'])] if flag)
+        if len(b['variants']) > 1 or b['edge'] or b['uncertain_alignment'] or not b['text']:
+            reason = '/'.join(x for x,flag in [('正文未识别',not b['text']),('未对齐',b['uncertain_alignment']),('读数变体',len(b['variants'])>1),('边界行',b['edge'])] if flag)
             unresolved += [f"\n## {b['id']}：{reason}", '', b['text'], '', '来源：'+', '.join(sorted({r['frame'] for r in b['refs']})), '', '原读数：']+[v['text'] for v in b['variants']]
     (root/'uncertain.md').write_text('\n'.join(unresolved)+'\n', encoding='utf-8')
+
+
+def load_resume_readings(value):
+    """Read-only batch-level reuse source: a previous partial/failed run's staging."""
+    root = Path(os.path.abspath(os.path.expanduser(value)))
+    if not root.is_dir():
+        raise ValueError('--resume-from 不是已存在的 staging 目录')
+    if root.is_symlink():
+        raise ValueError('--resume-from 不接受符号链接目录')
+    receipt_path = root/'receipt.json'
+    if not receipt_path.is_file():
+        raise ValueError('--resume-from 目录缺少 receipt.json，无法核验来源与参数')
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+    except (ValueError, OSError) as exc:
+        raise ValueError('--resume-from 的 receipt.json 无法解析: '+str(exc))
+    rows, malformed = [], 0
+    raw_file = root/'raw-ocr.jsonl'
+    if raw_file.is_file():
+        for line in raw_file.read_text(encoding='utf-8').splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except ValueError:
+                malformed += 1; continue
+            if not isinstance(item, dict) or item.get('stage') not in ('layout','body') or \
+                    not isinstance(item.get('frame'), str) or not isinstance(item.get('input_relative'), str) or \
+                    not isinstance(item.get('record'), dict):
+                malformed += 1; continue
+            rows.append(item)
+    return root, receipt, rows, malformed
+
+
+def copy_reading(row, new_path):
+    """Reuse an old reading verbatim; only the input path re-binds to this staging."""
+    record = dict(row['record'])
+    record['path'] = str(new_path)
+    record['resumed'] = True
+    return record
+
+
+def deadline_exceeded(begun, deadline):
+    """Wall-clock check before each OCR batch; None budget never trips. Extraction is exempt."""
+    if deadline is None:
+        return False
+    return time.monotonic()-begun > deadline
 
 
 def run(args):
@@ -400,17 +483,35 @@ def run(args):
             raise ValueError(f'{name} 超过允许预算 {low}—{high}')
     if not math.isfinite(args.ocr_timeout) or not 1 <= args.ocr_timeout <= 600:
         raise ValueError('--ocr-timeout 需要 1—600 秒')
+    if args.deadline_seconds is not None and (not math.isfinite(args.deadline_seconds) or args.deadline_seconds <= 0):
+        raise ValueError('--deadline-seconds 需要正数（秒）')
+    resume_staging = resume_receipt = resume_rows = None
+    resume_malformed = 0
+    if args.resume_from:
+        resume_staging, resume_receipt, resume_rows, resume_malformed = load_resume_readings(args.resume_from)
     target = resolve_new_output(args.output)
     source = Path(args.input).expanduser().resolve()
     if not source.is_file():
         raise ValueError('输入视频不存在')
     ffmpeg, duration, source_width, source_height = probe(source)
     source_sha = digest(source)
+    if resume_staging is not None:
+        previous_parameters = resume_receipt.get('parameters') if isinstance(resume_receipt.get('parameters'), dict) else None
+        if resume_receipt.get('source_sha256_before') != source_sha:
+            raise ValueError('--resume-from 拒绝：上一运行来源 SHA 与本次输入不一致，不能把多次输出当作不同原素材')
+        if previous_parameters is None:
+            raise ValueError('--resume-from 拒绝：上一运行 receipt 缺少 parameters，无法核验关键参数')
+        mismatched = [name for name in RESUME_KEYS if previous_parameters.get(name) != getattr(args, name)]
+        if mismatched:
+            raise ValueError('--resume-from 拒绝：关键参数不一致 '+','.join(mismatched)+'；用相同参数重跑或新建目录')
     ocr = LocalOCR(args.engine, args.ocr_executable, args.batch_size, args.ocr_timeout, args.deny_network, args.rapid_python, args.runtime_dir)
     staging = Path(tempfile.mkdtemp(prefix='.'+target.name+'.staging-', dir=target.parent))
     os.chmod(staging, 0o700)
     begun = time.monotonic()
+    deadline_hit = False
     status, errors, issues, frames = 'draft_requires_review', [], [], []
+    resumed_readings = resumed_mismatch = 0
+    estimated_ocr_images = None
     try:
         (staging/'frames').mkdir(); (staging/'body').mkdir()
         scale = min(1., math.sqrt(args.max_pixels/(source_width*source_height)))
@@ -452,8 +553,40 @@ def run(args):
                 unique.append(ph)
             else:
                 frame['layout_cache_from'] = cache[ph]['original']
+        if resume_staging is not None:
+            # Frame identity: same-id full-page PNG in both stagings must be byte-equal.
+            # A matching reading never costs a new call; mismatches fall through to OCR.
+            for ph in unique:
+                original = cache[ph]['original']
+                old = next((r for r in resume_rows if r['stage'] == 'layout' and
+                            (r['frame'] == original or r.get('cache_from') == original)), None)
+                if old is None:
+                    continue
+                try:
+                    same = digest(resume_staging/old['input_relative']) == digest(cache[ph]['path'])
+                except OSError:
+                    same = False
+                if same:
+                    cache[ph]['record'] = copy_reading(old, cache[ph]['path'])
+                    resumed_readings += 1
+                else:
+                    resumed_mismatch += 1
+        # Cost estimate before any layout batch: registration only, never blocking.
+        # Body crops cannot be counted before layout OCR, so the bound is unique pages doubled.
+        estimated_ocr_images = 2*len(unique)
+        print(f'预计 OCR 调用 ≤ {estimated_ocr_images} 张（布局 {len(unique)} 帧 + 正文 ≤{len(unique)} 帧；批大小 {args.batch_size}）',
+              file=sys.stderr, flush=True)
         for start in range(0, min(len(unique), args.max_ocr_images), args.batch_size):
-            batch = unique[start:min(start+args.batch_size, args.max_ocr_images)]
+            batch = [ph for ph in unique[start:min(start+args.batch_size, args.max_ocr_images)]
+                     if cache[ph]['record'] is None]
+            if not batch:
+                continue
+            if deadline_exceeded(begun, args.deadline_seconds):
+                deadline_hit = True; status = 'partial'
+                covered = [f['id'] for f in frames if cache[f['pixel_sha256']]['record'] is not None]
+                issues.append({'kind': 'deadline_exhausted', 'stage': 'layout',
+                               'covered_to_frame': covered[-1] if covered else None})
+                break
             try:
                 records = ocr.recognize([cache[ph]['path'] for ph in batch])
                 for ph, record in zip(batch, records):
@@ -469,8 +602,12 @@ def run(args):
                 issues.append({'kind': 'layout_ocr_missing_after_error_or_budget', 'frame': frame['id']})
                 continue
             layouts[frame['id']] = record['normalized_lines']
+            row = {'frame': frame['id'], 'stage': 'layout', 'cache_from': frame.get('layout_cache_from'),
+                   'input_relative': str(Path(record['path']).relative_to(staging)), 'record': record}
+            if record.get('resumed') is True:
+                row['resumed'] = True
             with raw_file.open('a', encoding='utf-8') as f:
-                f.write(json.dumps({'frame': frame['id'], 'stage': 'layout', 'cache_from': frame.get('layout_cache_from'), 'input_relative': str(Path(record['path']).relative_to(staging)), 'record': record}, ensure_ascii=False)+'\n')
+                f.write(json.dumps(row, ensure_ascii=False)+'\n')
         body_cache, pages, body_unique = {}, [], []
         for n, frame in enumerate(frames):
             path = staging/frame['full']
@@ -499,15 +636,40 @@ def run(args):
             if ph in body_cache:
                 frame['body_cache_from'] = body_cache[ph]['original']
             else:
-                record = ({'normalized_lines': layout, 'lines': layout, 'path': str(path), 'error': ''}
+                record = (cache[frame['pixel_sha256']]['record']
                           if frame['roi']['box'] == [0,0,width,height] else None)
                 body_cache[ph] = {'record': record, 'original': frame['id'], 'path': staging/frame['body']}
                 if record is None:
                     body_unique.append(ph)
+        if resume_staging is not None:
+            # Body rows match on identical input_relative bytes; injected readings cost no call.
+            for ph in body_unique:
+                original = body_cache[ph]['original']
+                old = next((r for r in resume_rows if r['stage'] == 'body' and
+                            (r['frame'] == original or r.get('cache_from') == original)), None)
+                if old is None:
+                    continue
+                try:
+                    same = digest(resume_staging/old['input_relative']) == digest(body_cache[ph]['path'])
+                except OSError:
+                    same = False
+                if same:
+                    body_cache[ph]['record'] = copy_reading(old, body_cache[ph]['path'])
+                    resumed_readings += 1
+                else:
+                    resumed_mismatch += 1
+            body_unique = [ph for ph in body_unique if body_cache[ph]['record'] is None]
         remaining = max(0, args.max_ocr_images-ocr.calls)
         if not errors:
             for start in range(0, min(len(body_unique), remaining), args.batch_size):
                 batch = body_unique[start:min(start+args.batch_size, remaining)]
+                if deadline_exceeded(begun, args.deadline_seconds):
+                    deadline_hit = True; status = 'partial'
+                    covered = [f['id'] for f in frames
+                               if f.get('body_pixel_sha256') and body_cache[f['body_pixel_sha256']]['record'] is not None]
+                    issues.append({'kind': 'deadline_exhausted', 'stage': 'body',
+                                   'covered_to_frame': covered[-1] if covered else None})
+                    break
                 try:
                     records = ocr.recognize([body_cache[ph]['path'] for ph in batch])
                     for ph, record in zip(batch, records):
@@ -519,17 +681,37 @@ def run(args):
         for frame in frames:
             ph = frame.get('body_pixel_sha256')
             record = body_cache[ph]['record'] if ph else None
+            if record is None and frame['id'] in layouts:
+                # Preserve already recognized full-page text when the crop stage
+                # has no budget or failed. Never label layout coordinates as crop coordinates.
+                frame['proposed_roi'] = frame['roi']
+                frame['proposed_body'] = frame['body']
+                frame['roi'] = {'box': [0,0,width,height], 'method': 'full_page_fallback',
+                    'confidence': 'low', 'boundary_lines': [], 'reason': 'body_ocr_unavailable_reused_layout'}
+                frame['body'] = frame['full']
+                frame['body_sha256'] = frame['full_sha256']
+                frame['body_pixel_sha256'] = frame['pixel_sha256']
+                frame['excluded_layout_lines'] = []
+                frame.pop('body_cache_from', None)
+                record = cache[frame['pixel_sha256']]['record']
+                status = 'partial'
+                issues.append({'kind': 'body_ocr_fallback_full_page', 'frame': frame['id'],
+                               'reason': 'crop_ocr_error_or_budget; original layout text retained'})
             if record is None:
                 status = 'partial'
                 issues.append({'kind': 'body_ocr_missing_after_error_or_budget', 'frame': frame['id']})
                 continue
+            row = {'frame': frame['id'], 'stage': 'body', 'cache_from': frame.get('body_cache_from'),
+                   'input_relative': str(Path(record['path']).relative_to(staging)), 'record': record}
+            if record.get('resumed') is True:
+                row['resumed'] = True
             with raw_file.open('a', encoding='utf-8') as f:
-                f.write(json.dumps({'frame': frame['id'], 'stage': 'body', 'cache_from': frame.get('body_cache_from'), 'input_relative': str(Path(record['path']).relative_to(staging)), 'record': record}, ensure_ascii=False)+'\n')
+                f.write(json.dumps(row, ensure_ascii=False)+'\n')
             frame['ocr_status'] = 'recognized'
             pages.append((frame, observations(record['normalized_lines'], frame)))
         blocks, alignment_issues = stitch(pages)
         issues.extend(alignment_issues)
-        if not blocks:
+        if not any(b['text'] for b in blocks):
             status = 'failed'; issues.append({'kind': 'no_text_extracted'})
         issues.extend({'kind': 'engine_error', **e} for e in errors)
         # Remaining extracted full pages are listed even after engine halt.
@@ -555,6 +737,10 @@ def run(args):
             'deny_network': args.deny_network, 'time_basis': 'fps_filter_derived_approx_not_source_pts',
             'blocks': len(blocks), 'body_characters': sum(len(key(b['text'])) for b in blocks),
             'roi_methods': dict(Counter(f['roi']['method'] for f in frames)), 'parameters': vars(args),
+            'deadline_seconds': args.deadline_seconds, 'deadline_hit': deadline_hit,
+            'estimated_ocr_images': estimated_ocr_images,
+            'resumed_readings': resumed_readings, 'resumed_skipped_malformed': resume_malformed,
+            'resumed_skipped_mismatch': resumed_mismatch, 'resume_from': str(resume_staging) if resume_staging else None,
             'model_review': 'not_reviewed', 'elapsed_seconds': round(time.monotonic()-begun,3),
             'privacy': 'explicit_text_mode_contains_raw_text_and_source_paths_no_cloud_no_skill_archive',
             'coverage': 'screen_visible_partial_meeting_not_full_transcript'})
@@ -604,6 +790,9 @@ def parse_args(argv=None):
     p.add_argument('--max-review-groups', type=int, default=6)
     p.add_argument('--max-review-images', type=int, default=18)
     p.add_argument('--roi', type=lambda x: [int(v) for v in x.split(',')], help='显式 left,top,right,bottom，抽帧后像素坐标')
+    p.add_argument('--deadline-seconds', type=float, default=None,
+                   help='OCR 批次粒度的墙钟时间预算（秒）；默认无限。只在每个布局/正文 OCR 批次开始前检查，抽取子进程不受约束')
+    p.add_argument('--resume-from', help='上一次 partial/failed 运行的 staging 目录；按来源SHA+关键参数+帧PNG字节复用读数，旧目录只读')
     args = p.parse_args(argv)
     if args.roi is not None and len(args.roi) != 4:
         p.error('--roi 必须有4个整数')
