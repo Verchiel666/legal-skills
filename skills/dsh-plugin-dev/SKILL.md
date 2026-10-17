@@ -2,14 +2,14 @@
 name: dsh-plugin-dev
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "0.6.3"
+version: "0.6.4"
 license: MIT
 description: DeepSeek Harness（DSH）插件的设计、开发、装载验证、版本迁移与发布审查指引（版本感知）。在用户要为 DSH Desktop 开发插件、把 Pi/Hermes 插件迁移到 DSH、做隔离装载实验、排查插件在真实宿主的行为、跟进 DSH 版本升级适配，或在发布前做机械审查与验收（dsh.bundle / dsh.client 双面包工件契约、inject/external 对账、主题变量、类型化 locale）时使用。不要用于普通 npm 包审查或与 DSH 无关的 agent 项目。
 ---
 
 # DSH Plugin Dev
 
-DSH 插件开发指引 Skill（2026-09-29 由 dsh-plugin-lint 并入吸收：开发主线 + 机械审查一体）。沉淀来源：dsh-plugins 仓库全程开发实测（真实 DSH Desktop 2.0.15 / 内嵌运行时 0.1.7-rc.2，五次隔离装载实验、14 个 PR 的独立审查修复；**2026-10-15 已按安装版 2.0.17 / 0.2.0-rc.2 复核**，见 harness-facts-020rc2）+ dsh-contract-copilot 0.1.2 期开发实测。
+DSH 插件开发指引 Skill（2026-09-29 由 dsh-plugin-lint 并入吸收：开发主线 + 机械审查一体）。沉淀来源：dsh-plugins 仓库全程开发实测（真实 DSH Desktop 2.0.15 / 内嵌运行时 0.1.7-rc.2，五次隔离装载实验、14 个 PR 的独立审查修复；**2026-10-15 已按安装版 2.0.17 / 0.2.0-rc.2 复核，2026-10-17 增补真宿主实证批（三标记复现 + C-1 装载实验，见 harness-facts-020rc2 实证修订节）**）+ dsh-contract-copilot 0.1.2 期开发实测。
 
 本技能不代替实现者：创建插件时先做设计预检，实现后回来做正式验收——审查器与生产者不混同责任。
 
