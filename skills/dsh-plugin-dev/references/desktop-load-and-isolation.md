@@ -1,5 +1,8 @@
 # Desktop 装载与隔离实验（DSH Desktop 2.0.15 / 0.1.7-rc.2 实测）
 
+> **宿主口径提示（2026-10-19 更正）**：本文以下全部内容基于**第三方外壳** `DSH Desktop.app`（`ai.deepseek.dsh.desktop`，个人证书 anywhere-labs）实测，**它不是官方应用**。官方应用是 `DeepSeek Harness.app`（`com.deepseek.dsh`，DeepSeek 公司证书 + `download.deepseek.com` nightly）。两者内嵌**同一**官方运行时版本（0.2.1-rc.2），故**插件面向运行时 API、外壳不参与**——本文多数宿主级结论可外推；但 **GUI 层、外壳专属 flag、`desktop-cli.js` 入口、profile-selection 机制不可外推**。
+> 官方应用的等价入口与差异见文末「官方宿主对照（2026-10-19）」节。宿主基准已按用户决定切至官方应用（见 `config/dsh-upstream.json` 的 `hostPolicy`）。
+
 出处：dsh-plugins 仓 DSH-002 与五次装载实验（docs/evidence/dsh-{env,002-gui-experiment,pilot-load,bizlink-load,consumer-selftest,slice3-load}-20260929）。
 
 ## 版本锚定（一切的前提）
@@ -67,3 +70,33 @@ DSH_HOME=<隔离home> CONTENT_FACTORY_SCAN_ROOT=<夹具> \
 ## 生产数据红线
 
 不读 `~/.dsh/sessions`、`.credentials.yaml`、settings 文档、storages；状态比对只到 ls 级目录名元数据。关停生产实例前后向用户报备（授权流程）。
+
+## 官方宿主对照（2026-10-19 实测，基准宿主）
+
+官方应用 `/Applications/DeepSeek Harness.app`（`com.deepseek.dsh`，公司证书 NAN929V4UM，`download.deepseek.com` nightly）与第三方外壳的差异**全在外壳层**，运行时同版本（`@deepseek-ai/dsh@0.2.1-rc.2`）。
+
+| 维度 | 官方应用 | 第三方外壳 |
+|---|---|---|
+| 签名 / 更新源 | DeepSeek 公司证书 / 官方 nightly | 个人证书 / GitHub anywhere-labs |
+| GUI 用的 profile | **硬编码** `~/.dsh/profiles/desktop` | `profile-selection` 指向 `web`（有 GUI 切换器） |
+| profile 切换 GUI | **无**（启动器层 `dsh --profile`） | 有 |
+| CLI 管该 profile | **拒绝**（`managed exclusively by the Electron application`） | 允许 |
+| headless 入口 | asar 内 `dsh/node_modules/@deepseek-ai/dsh/lib/bin.js`（**无** `desktop-cli.js`） | `app/lib/desktop-cli.js` |
+| 插件市场 | 官方 Discover（bundle 默认关）+ 社区 `dshmarket` 侧栏页 | `dsh-community-market` + `dshmarket` |
+
+**官方应用 headless 入口配方**（替代 `desktop-cli.js`）：
+
+```bash
+APP="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
+BIN="/Applications/DeepSeek Harness.app/Contents/Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"
+DSH_HOME=<隔离目录> ELECTRON_RUN_AS_NODE=1 "$APP" "$BIN" --profile <名> --no-open --port <端口>
+# --version / --dump-config / --dump-config-schema / headless 任务 均可用
+```
+
+**官方 GUI 隔离实例**：官方应用无 `profile-selection`，但支持 `--user-data-dir=<隔离目录>` 起并行实例（独立单例锁/独立向导态）；`--profile` 在 GUI 模式被忽略（profile 由 profile 目录本身决定）。官方应用同样支持 `DSH_HOME` 隔离。
+
+**官方 GUI 装插件**：CLI 禁管 desktop profile ⇒ 走 GUI「插件 → + 添加插件」（支持包名 / GitHub 地址 / 本地目录路径），或直接用**官方内嵌 pnpm**（`app/Contents/Resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.cjs`，11.28.5，store v11）——系统 pnpm 10 用 store v10 会报 `ERR_PNPM_UNEXPECTED_STORE`。
+
+**跨宿主迁移纪律**：迁 profile 配置时**「定向禁用」条目必须一并迁**（它们同样是为兼容旧宿主而写的可移植配置），否则旧宿主专属的 client 工件会在新宿主的模块表上 import 失败，并因「1 个 client 条目失败即终止整个 web boot」而导致应用整体起不来。社区插件是**绑宿主**的，异常先查 peer 声明。
+
+出处：`docs/evidence/official-app-hostverify-20261019/`（verification.md / official-market-and-profile-facts.md / migration/verification.md）。

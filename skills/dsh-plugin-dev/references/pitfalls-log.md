@@ -94,3 +94,15 @@
 | pre-push 全套门禁时序敏感测试闪断（全并行红、单文件绿） | 是否有隔离实验的 Electron host 未清 | 实验 host 进程吃满核导致 timing 断言漂移——**推门前先杀 lab host**（`pkill -f "profile <名>"`） | 同上 |
 | 浏览器观察 DSH web client：evaluate/DOM 快照周期性超时 | 先跑对照 profile 定基线 | 重型 SPA 会饿死观察通道（健康页面也可能间歇超时）。替代观察面：curl+cookie 会话提取 HTML 内联 `__DSH_BOOT__` manifest（client 模块图权威）、整页截图、DOM 快照文本比对 | dsh-plugins PR #339 |
 | 装配后立即抓 web token 拿到空值/旧值 | boot 日志是否已出现 "dsh web" 行 | `plugin add` 触发的 boot 里 URL 行有延迟——轮询等行出现再取 token | 同上 |
+
+## 跨宿主迁移（官方 DeepSeek Harness ↔ 第三方外壳，2026-10-19 实测批）
+
+宿主事实：官方应用 `com.deepseek.dsh`（DeepSeek 公司证书 NAN929V4UM，`download.deepseek.com` nightly）内嵌运行时 `@deepseek-ai/dsh@0.2.1-rc.2`；第三方外壳 `ai.deepseek.dsh.desktop`（个人证书 UM3Z9G5DNH，anywhere-labs）内嵌**同一**运行时版本。**插件面向运行时 API、外壳不参与** ⇒ 宿主级结论多可外推，GUI 层与外壳专属 flag 不可外推。
+
+| 症状 | 先查 | 曾见原因与修复 | 出处 |
+|---|---|---|---|
+| 迁宿主后应用**整体启动失败**（"应用无法启动或已意外停止" / `web boot: 1 entry did not activate` + 某 client 插件 `import failed: client-modules: require(...) missed the module table`） | 源 profile 的 `cordis.patch.yml` 里**「定向禁用」条目**是否一并迁入 | **跨宿主迁移不能只迁「本仓插件的正向配置」**——为兼容旧宿主而做的 `disabled: true` 同样是可移植的关键配置。漏迁 `- id: web-ui-dsh-aionui-panel / disabled: true` ⇒ aionui 面板的 client 工件引用旧宿主模块表里才有的 `@deepseek-ai/dsh-client-runtime/client`（官方 0.2.1-rc.2 无此模块）→ 激活抛错 → **1 个 client 条目失败即终止整个 web boot**。修复：把源 profile 的定向禁用条目一并迁入并注明原因 | 官方迁移事故（`docs/evidence/official-app-hostverify-20261019/migration/verification.md`） |
+| 迁宿主后某社区插件在目标宿主**报错/标异常**（官方插件页显示「异常」，或启动日志 `incompatible with dsh x.y.z`） | 该插件的 peerDependencies / `engines.dsh` 声明 vs 目标宿主运行时版本 | **社区插件是绑宿主的，不是「装一次到处跑」**。实例：`dsh-better-sidebar@0.12.3` 要求 `^0.1.0-rc.6` 系列依赖，与官方 0.2.1-rc.2 不兼容，官方原文警告 *"Running it may cause crashes or data loss"* ⇒ 被官方版本门禁拦下（豁免须 `dsh plugin allow-version` 精确版本授权）。**遇到社区插件异常先查 peer 声明，别改插件本身** | 同上 |
+| `dsh plugin --profile <官方GUI用的profile> add ...` 报 `profile "desktop" is managed exclusively by the Electron application` | 目标 profile 是否为 GUI 硬编码所有 | 官方 GUI 硬编码 `~/.dsh/profiles/desktop`（`lib/main.js` 的 `resolveDesktopPaths`），且 `dsh/lib/bin.js` 的 `rejectElectronProfile` 拒绝 CLI 管理该 profile ⇒ **插件安装须走 GUI「+ 添加插件」或直接 pnpm 后端**（用官方内嵌 pnpm 11.28.5，store v11；系统 pnpm 10 用 store v10 会报 `ERR_PNPM_UNEXPECTED_STORE`） | 同上 |
+| 官方 GUI 里找不到「插件市场」 | 是否显式加入 `@deepseek-ai/dsh-experimental-plugin-market-bundle` | 官方市场 bundle 属 `OPTIONAL_BUNDLES`（**默认关闭**，不随任何 shipped profile 模板自动选中）⇒ 需在 profile 的 `dsh.profile.bundles` 显式加入才有「发现」标签页。另：官方 Discover 的索引须为 `@deepseek-ai/dsh-plugin-market-index` v1 格式（严格 schema），社区 `dshmarket` 的 `awesome-dsh-plugin.com/plugins.json` 是私有格式，官方页会报「此索引的格式无效」——**社区市场另有独立侧栏页，两条路不冲突** | 同上 |
+| 官方应用无 profile 切换 | 是否在找 GUI 切换器 | 官方**没有** profile 切换 GUI：profile 选择在启动器层（`dsh --profile <名>` / `DSH_HOME`）。第三方外壳才有 `profile-selection` GUI（按共享 userData 存放，隔离实验须快照恢复）。两端 profile 名不冲突（官方 `desktop` / 第三方 `web`）但**共用 `~/.dsh` home** | 同上 |
