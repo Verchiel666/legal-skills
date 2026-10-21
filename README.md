@@ -34,6 +34,7 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-21 | 更新 | [git-workflow](skills/git-workflow/) | v1.24.1 | 草稿使用官方 `gh pr ready` 入口保留原 PR 编号与审查记录，转换前后核 head/base，失败先回查；保留独立授权与 CI 门禁。 |
 | 2026-10-18 | 更新 | [slides](skills/slides/) | v1.5.16 | MIT 幻灯片工具；修复含空格、中文、# 与 % 的本地 HTML 和图片路径，补充 PPTX/PDF 双格式回归。 |
 | 2026-10-16 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.9.0 | B 单权威写入口协议：`SNAPSHOT_WRITER_PROTOCOL=2`——save_latest 双形态规范化（raw/v2 行往返保真）+ `normalized_rows` 扩展字段直通 + `lock_timeout` 显式参数 + `_lite` 缺省可回填；star-board 插件把全部写入路由给它（单锁/单 CAS/单规范化）；跨仓 runner 按实际调用计数判别写路径（新+新 PASS / 新技能+旧插件 FAIL / 旧技能+新插件回退 PASS）。 |
 | 2026-10-16 | 更新 | [skill-lint](skills/skill-lint/) | v2.9.3 | 仓库发布配置和AGENTS历史迁至docs，项目入口按需转引；skill-lint保持通用审查职责。 |
@@ -701,7 +702,7 @@
 <td>工具·Git</td>
 <td style="word-break:break-word">Git 工作流安全助手，覆盖分支管理、长期集成分支、Monorepo 安全合并、PR、冲突处理、安全回退、分支清理、身份绑定 safe-push、提交身份自检/污染审计、worktree 前 3 查判读与常见事故恢复</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v1.17.1</td>
+<td style="text-align:center">v1.24.1</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/git-workflow-1.8.7.zip">旧版ZIP（内容版本待核）</a></td>
 <td>所属套件：[Skill 开发与质量保障](expert-suites/skill-development-quality/)、[Skill 发布与分发](expert-suites/skill-release-distribution/)</td>
 </tr>
