@@ -34,6 +34,7 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-21 | 新上传 | [disk-insight](skills/disk-insight/) | v1.1.0 | 默认自动发现 Fathom 历史并输出 APFS 容量变化；无历史才定向扫描，明确区分目录累计与真实物理占用。源码待发布。 |
 | 2026-10-21 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.1.0 | 新增 Codex App cross-thread coordination 参考入口（独立 thread 之间的跨会话协调）、全局配置文件共享写入纪律（单写者/快照/写后逐项回读）、重复任务证据门槛（DUPLICATE_CONFIRMED / SAME_TOPIC_UNCONFIRMED）；跨会话发送侧经一次性 scratch 会话端到端验证。 |
 | 2026-10-21 | 更新 | [dsh-plugin-dev](skills/dsh-plugin-dev/) | v0.6.5 | locale 嵌套展开、重复键和浅覆盖冲突转 NOT_VERIFIED；保留不相交顶层展开，完整自测 47 项。源码待发布。 |
 | 2026-10-21 | 更新 | [git-workflow](skills/git-workflow/) | v1.24.2 | 补充仓库自带 `.githooks/` 的手动启用说明：`core.hooksPath` 相对路径按 worktree 根解析，稀疏检出未落盘时 Git 静默跳过。 |
@@ -767,6 +768,15 @@
 <td style="text-align:center">MIT</td>
 <td style="text-align:center">v0.3.2</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/dsh-plugin-dev-0.3.2.zip">下载</a></td>
+<td></td>
+</tr>
+<tr>
+<td><a href="skills/disk-insight/"><strong>disk-insight</strong></a></td>
+<td>工具·空间研判</td>
+<td style="word-break:break-word">默认自动发现 Fathom 历史并输出 APFS 容量变化，无历史才独立定向采集；分析模型、Agent 会话、工作树与可视化产物并给出保留建议</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v1.1.0</td>
+<td style="text-align:center">源码待发布</td>
 <td></td>
 </tr>
 <tr>
