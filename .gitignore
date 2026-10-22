@@ -264,3 +264,11 @@ skills/github-star-manager/scripts/output/stars_raw_new.json
 !skills/multi-agent-orca/config/harness-backend-policy.json
 # multi-agent-orca 远程调度回执（runtime 临时文件，含 nonce/会话名，不入库）
 skills/multi-agent-orca/config/remote-dispatch-inbox/
+
+# multi-agent-orchestration: 本地运行时配置（含 API 密钥），不入库
+skills/multi-agent-orchestration/
+# github-star-manager: 运行时缓存状态文件
+skills/github-star-manager/.added.txt
+skills/github-star-manager/.new_names.txt
+skills/github-star-manager/.old_names.txt
+skills/github-star-manager/.unstarred.txt
