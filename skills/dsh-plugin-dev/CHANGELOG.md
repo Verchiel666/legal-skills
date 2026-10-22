@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5] - 2026-10-21
+
+### 修复
+
+- locale 静态解析对嵌套 spread、重复键、spread 属性重叠统一返回 NOT_VERIFIED，不再把扁平路径或集合并集伪装成 JavaScript 浅覆盖语义，修复错误 PASS 与错误 FAIL。
+- 保留可证明不相交的同文件顶层展开；新增五个不支持形态反例和一个合法正控，完整自测 47 项通过。未实现一般 JavaScript 求值，也不执行目标词典。
+
 ## [0.6.4] - 2026-10-17
 
 ### 真宿主实证批回写（dsh-plugins DSH-023 标记轮 PR #338 + DSH-022 C-1 PR #339，Desktop 2.0.17 / 0.2.0-rc.2 隔离 headless + 浏览器 client）

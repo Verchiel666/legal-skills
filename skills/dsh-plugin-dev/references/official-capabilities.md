@@ -5,7 +5,7 @@
 ## 查证方法（怎么找官方能力）
 
 1. **版本锚定**：以 dsh-plugins `config/dsh-upstream.json` 钉定的 tag/commit 为准——**锚点是安装版实物**（安装包 manifest 直读；2026-09-30 实测 npm `latest` 与安装版曾不同步，npm channel 不作等式；`next` 是预发布线，不作为开发依据）。
-2. **安装版实物优先**：`/Applications/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/`（内嵌运行时包，只读）是首选事实源——类型/导出面查 `dsh-tool-cordis/lib/types/api-catalog.js` 与各包 `README.zh.md`（内嵌树 `.d.ts` 已剥离，包 lib 查不到 ≠ 全树缺失）。本机若有 harness 源码检出，`git worktree add --detach <临时路径> <tag commit>` 可零污染读任意版本（src 形态；发布包只有 lib）。
+2. **安装版实物优先**：官方应用 `/Applications/DeepSeek Harness.app/Contents/Resources/app.asar` 内 `dsh/node_modules/@deepseek-ai/`（内嵌运行时包，只读；asar 内路径仅 Electron 运行时可解析，OS 层读不到时用 `npx asar extract-file` 取出）——或用 `npx asar list` 列出 asar 目录树——是首选事实源——类型/导出面查 `dsh-tool-cordis/lib/types/api-catalog.js` 与各包 `README.zh.md`（内嵌树 `.d.ts` 已剥离，包 lib 查不到 ≠ 全树缺失）。本机若有 harness 源码检出，`git worktree add --detach <临时路径> <tag commit>` 可零污染读任意版本（src 形态；发布包只有 lib）。
 3. **文档优先于 grep**：官方 `packages/<组>/README(.zh).md` 是逐包契约文档（含用法示例与刻意设计说明），`docs/subsystems/*.md` 是子系统文档，`.agents/notes/implemented/architecture/` 是实现决策笔记——先读再 grep，能少走弯路。
 4. **找官方消费者范例**：确认能力可用后，grep 官方自己的消费代码（如 `inject: ['llm']`、`ctx.llm.stream`）找最小可照抄范例——官方非会话消费者（session-title、compaction summarizer）是「一次性调用」类用法的现成模板。
 5. **结论写回两处**：证据全文进 dsh-plugins `docs/research/`（研究文档），复用结论进本目录（条目）；涉及取舍的记 dsh-plugins `docs/DECISIONS.md`。单一事实源：本目录不复制研究全文，只留结论 + 指针。

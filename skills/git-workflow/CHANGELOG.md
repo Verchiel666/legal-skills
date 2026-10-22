@@ -1,5 +1,21 @@
 # 变更日志
 
+## [1.24.2] - 2026-10-21
+
+### 文档
+- `references/privacy-preflight.md` 补充「手动启用仓库自带 hook」：仓库 `.githooks/` 随仓库分发但 Git 默认只读 `.git/hooks/`，此前文档未说明启用前提。现给出 `git config core.hooksPath .githooks` 的启用与 `--unset` 禁用方式，并说明相对路径按 worktree 根解析、稀疏检出未落盘 `.githooks/` 时 Git 会静默跳过。
+
+### 验证
+- 仅文档变更。`git config core.hooksPath .githooks` 与 `git config --unset core.hooksPath` 已在真实仓库验证生效；`git rev-parse --git-path hooks` 在主目录与 linked worktree 均解析为该 worktree 根下的 `.githooks`。
+
+## [1.24.1] - 2026-10-21
+
+### 修复
+- 草稿转审查使用官方 `gh pr ready` 保留同一 PR；移除关闭重建的错误默认路径，避免切断编号与审查记录。转换前后绑定 head/base，失败先回查，保留独立授权与最终 CI 门禁。
+
+### 验证
+- 增加离线文档合同回归并接入 Git Privacy CI；官方手册和 CLI 帮助核验命令存在。未转换、关闭或合并真实 PR，文档测试不等同真实权限/网络条件下的执行验收。
+
 ## [1.24.0] - 2026-10-18
 
 ### 新增
