@@ -34,14 +34,14 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-23 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.12.0 | 普通收藏与 focus 共用有界轮巡，按具体本地组件发现机会；区分观察增量与固定快照差距，报告取证覆盖并沿反馈去重。 |
+| 2026-10-23 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.11.0 | 新增重点项目 API 画像、focus 登记与固定 commit 的有界稀疏源码包，可判断上游 Skill/运行时对本地套件的复用路径；默认不克隆或执行上游代码。 |
 | 2026-10-22 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.10.0 | 动态发现本地套件目标，显式刷新收藏并取 README/Release/提交证据，按目标与上游修订抑制重复反馈，支持每日 Agent 研判。 |
 | 2026-10-22 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.1.1 | 补齐 PM 总管 PR 合并与本地/云端一致性治理：候选门禁、base 前移证据、内容绑定隐私例外、在途材料保护和中断恢复；Git 操作沿用 git-workflow。 |
 | 2026-10-21 | 新上传 | [disk-insight](skills/disk-insight/) | v1.1.0 | 默认自动发现 Fathom 历史并输出 APFS 容量变化；无历史才定向扫描，明确区分目录累计与真实物理占用。源码待发布。 |
 | 2026-10-21 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.1.0 | 新增 Codex App cross-thread coordination 参考入口（独立 thread 之间的跨会话协调）、全局配置文件共享写入纪律（单写者/快照/写后逐项回读）、重复任务证据门槛（DUPLICATE_CONFIRMED / SAME_TOPIC_UNCONFIRMED）；跨会话发送侧经一次性 scratch 会话端到端验证。 |
 | 2026-10-21 | 更新 | [dsh-plugin-dev](skills/dsh-plugin-dev/) | v0.6.5 | locale 嵌套展开、重复键和浅覆盖冲突转 NOT_VERIFIED；保留不相交顶层展开，完整自测 47 项。源码待发布。 |
 | 2026-10-21 | 更新 | [git-workflow](skills/git-workflow/) | v1.24.2 | 补充仓库自带 `.githooks/` 的手动启用说明：`core.hooksPath` 相对路径按 worktree 根解析，稀疏检出未落盘时 Git 静默跳过。 |
-| 2026-10-21 | 更新 | [git-workflow](skills/git-workflow/) | v1.24.1 | 草稿使用官方 `gh pr ready` 入口保留原 PR 编号与审查记录，转换前后核 head/base，失败先回查；保留独立授权与 CI 门禁。 |
-| 2026-10-18 | 更新 | [slides](skills/slides/) | v1.5.16 | MIT 幻灯片工具；修复含空格、中文、# 与 % 的本地 HTML 和图片路径，补充 PPTX/PDF 双格式回归。 |
 
 </details>
 
