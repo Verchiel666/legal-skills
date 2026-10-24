@@ -13,6 +13,25 @@ python scripts/auto_discover.py projects --skills-root /path/to/suite-a --skills
 
 目标事实取自 `SKILL.md`、`TASKS.md` 的显式当前目标、路径限定 Git 历史，以及最多三个入口脚本/参考文档的有界实现摘要。历史/归档/DONE 条目不作为当前需求，description/TASKS 的“不承担/不要用于”按概念从正向召回剔除，但仍保留原文供范围预警。Git 近期投入用于排序；提交多不等于质量好或需求仍有效。非 Git、读取失败、实现摘要截断和无可识别能力分别保留状态。
 
+### 排除句的判定口径
+
+范围冲突只能依据组件**真实声明的排除短句**判定，不能对整份 SKILL.md 正文做概念命中。旧实现按标记切分文本并保留其后全部内容，切片因此吞进组件自己的正向词汇（"视频""封面""字幕"），让一个 React UI 库也被判成与发布 Skill 冲突。现在只读到第一个句读边界为止：
+
+- `exclusion_clauses` 是判定依据的原文短句，`exclusion_source` 标明它来自 `extracted`（自动抽取）还是 `declared`（组件显式声明）。
+- 抽取来源是 `description` 与 `TASKS.md` 的当前目标行，句读边界为 `。；;！!？?`、换行或引号收尾。逗号不结束短句——真实排除句会用"、"或"，列出被排除的事项。
+- 组件也可以用显式限缩句声明边界（"本 Skill 只维护卡片场景的适配"），这同样是排除短句。
+- 组件可以在自己的目录里写 `scope.json`（`{"exclusions": [...]}`），或在 `TASKS.md` 写 `declared_exclusions:` 段逐行列出。显式声明优先于自动抽取，默认行为完全离线可跑，不需要模型参与。
+
+`scope_status` 的三个取值：
+
+| 取值 | 含义 |
+|---|---|
+| `conflicts_with_stated_scope` | 上游命中组件真实声明的排除短句；`scope_conflicts` 给出命中的短句与概念 |
+| `no_stated_scope_conflict` | 组件有可解析的排除短句，本轮未命中 |
+| `stated_scope_unparsed` | 组件没有可读取的排除短句，本轮**未做**范围判定；`scope_note` 注明"排除条款未能结构化解析，请人工确认" |
+
+第三种不是"无冲突"，而是"没有判定依据"。把它与第二种分开，是为了不让一个没写排除句的组件静默获得"已确认不冲突"的结论。
+
 `research --project <已安装Skill名或目录>` 同样支持动态目标。`output/projects/*.json` 是可选的目标补充与约束，失效的显式引用仍拒绝出包；不会自动写一堆永久 profile。
 
 ## 每日准备入口
@@ -37,6 +56,42 @@ python scripts/auto_discover.py auto-discover \
 - `--skills-root` 可重复且覆盖默认根；`--repo-root` 是单仓库的兼容入口。同名不同源保留路径限定 ID，不静默选一个。`--project` 可缩小本轮范围。
 
 `starred_at` 表示关注行为，`pushed_at` 表示上游活跃，目标文档与路径提交表示用户当前投入，三者分别记录。关键词及中英概念映射只用于有界召回；来源太宽、负向限制或历史任务混入时，应定向读取纠偏。输出带候选总量、截断、扫描范围和未取证状态，未覆盖不能称“没有机会”。`watch_coverage` 中的覆盖档位区分 deep/cheap、partial/skipped 与真实 checked；`checked` 只表示本档成功触达，预算跳过或失败只保留待查，不推进检查时间，也不解除既有反馈抑制。
+
+## 候选携带证据
+
+候选不是"待查清单"，而是已经带着证据的研判输入：
+
+- `evidence_status` 取真实值，不再对所有候选恒为 `not_fetched`：
+
+| 取值 | 含义 | 摘要来源 |
+|---|---|---|
+| `complete` | 本轮读到完整证据 | 本轮 |
+| `partial` | 本轮取证不完整，且没有可回退的完整缓存 | 本轮（残缺） |
+| `cached_partial` | 本轮取证失败，回退到既有完整缓存 | 缓存（旧的） |
+| `cached_skipped` | 本轮因预算等跳过取证，回退到既有完整缓存 | 缓存（旧的） |
+| `cached` | 命中既有完整证据缓存，本轮未尝试，仓库元数据未变 | 缓存（旧的） |
+| `stale` | 命中既有完整证据缓存，本轮未尝试，仓库元数据已变 | 缓存（旧的） |
+| `not_fetched` | 本轮与缓存都没有该仓库的任何证据 | 无 |
+
+- `evidence_source` 区分 `this_run`（本轮取证）与 `cache`（复用缓存）。缓存证据始终带上自己的 `fetched_at`，不冒充本轮新取。回退分支（`cached_partial` / `cached_skipped`）的 `evidence_source` 是 `cache`，`evidence_summary.fallback_note` 明写"本轮取证失败/未完成，摘要是上一份完整缓存"。
+- `evidence_summary` 给出受长度上限约束的 README 正文、最新 Release 正文与最近提交摘要（每段上限 1200 字符），并附 `readme_blob_sha`、`release_tag`、`release_url`、`head_sha` 与 `observed` 标记。Agent 直接读它研判，不必再联网补读同一批仓库。
+- `evidence_rank` 是队列排序维度：**本轮深探测 > 本轮廉价探测 > 本轮部分失败（含回退缓存）> 缓存命中 > 无证据**。这一维回答"本轮对这个仓库知道多少"，所以本轮尝试过但取证失败或被跳过的候选不会排在从未尝试过的缓存命中之后。
+
+| 档 | `evidence_rank` | 典型状态 |
+|---|---|---|
+| 本轮深探测 | 4 | `complete`（本轮深度取证） |
+| 本轮廉价探测 | 3 | `complete`（本轮 cheap probe） |
+| 本轮部分失败 | 2 | `partial`、`cached_partial`、`cached_skipped` |
+| 缓存命中 | 1 | `cached`、`stale` |
+| 无证据 | 0 | `not_fetched` |
+
+`stale` 与 `cached` 同为缓存档（1 分），但同档内 `stale` 排前面：它的仓库元数据已经变了，附着的证据可能已经不对。`evidence_detail_rank` 是同档内的次序：本轮残缺（4）> 回退失败（3）> 回退跳过（2）> stale 缓存（2）> 新鲜缓存（1）。回退跳过与 stale 缓存同分但分属不同档（2 分与 1 分），实际先后由档位决定。
+
+排序语义：**本轮已取证是第一优先级维度**，被本轮付费取证的仓库优先进入候选，该优先级不会被 `select_candidates` 内部的字母序重排覆盖。`--limit/--per-project/--per-repo` 上限和轮转公平性保持不变——已取证优先只决定同一上限内的先后，一个仓库仍不能占满名额，一个项目仍不能垄断整轮。
+
+`coverage.watch_coverage.evidence_candidates` 披露四组事实：`fetched_this_run`（本轮取证的仓库数）、`fetched_in_candidates` 与 `fetched_not_in_candidates`（取证后是否进入候选）、`candidates_with_evidence` / `candidates_without_evidence`（候选里带证据的条数与总数）。**没进候选不等于没变化**：被队列上限挡下的取证仓库会显式列出。
+
+本轮新取的 README 与 Release 正文在生成候选之前就已接入本轮召回，因此"新 Release 带来新能力 → 匹配到新组件"这条链路成立。召回仍然有界：README 正文与 Release 正文各取固定上限，未取证的仓库不会凭空进入候选。
 
 ## Agent 如何消费
 
@@ -74,6 +129,7 @@ focus 仓库即使没有组件匹配，也保留在 `focus_deltas` 检查汇总�
 python scripts/auto_discover.py reconcile --data-dir ~/.local/state/github-star-manager/discovery
 python scripts/auto_discover.py receipt --data-dir ~/.local/state/github-star-manager/discovery --outcome auto
 python scripts/auto_discover.py lease acquire --data-dir ~/.local/state/github-star-manager/discovery \
+
   --owner "<本轮执行者>" --run-id "<本轮运行 ID>" --ttl 1800
 python scripts/auto_discover.py lease release --data-dir ~/.local/state/github-star-manager/discovery \
   --owner "<本轮执行者>" --run-id "<本轮运行 ID>"
@@ -91,6 +147,7 @@ python scripts/auto_discover.py lease release --data-dir ~/.local/state/github-s
   - 未过期且属于其他 owner 的租约会明确拒绝（退出码 1）；过期租约可被接管；释放只删除自己持有的那一份。
   - 租约文件损坏会被隔离备份（改名保留，必要时先复制再删）并显式降级告警，而不是被当作“没有租约”静默通过。**隔离失败时拒绝获取租约**（退出码 1）并把损坏原文原样留在原位——不会用新租约覆盖掉无法保留的现场。
   - **run_id 与续租**：同一 owner 续租时若未显式传入 `--run-id`，保留现有 run_id（原 run_id 因此仍可用于 release）；显式传入新的 `--run-id` 时按新值更新，并在 `notes` 里说明运行 ID 切换。过期租约被其他 owner 接管时分配新的 run_id。
+
 
 调用顺序：acquire 租约 → auto-discover 准备 → Agent 研判并写卡 → reconcile → receipt → release 租约。`opportunity.py record` 与这里的 `--data-dir` 是各自独立的入口，跨命令写卡时必须显式传入同一个目录，否则卡会落到默认缓存目录而 reconcile 看不到。
 

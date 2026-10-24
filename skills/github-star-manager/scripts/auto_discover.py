@@ -19,6 +19,7 @@ from lockutil import write_lock
 import daily_loop
 from project_context import (capability_hints, compare_snapshot_commit, default_roots, digest, discover,
                              match_terms, terms_for, scope_conflicts,
+                             scope_note, scope_status,
                              shared_evidence_revision, shared_repo_revision)
 from star_query import emit, envelope, parse_dt
 from star_tracker import StarTracker
@@ -853,6 +854,150 @@ def update_review_queue(data_dir, old, selected, all_candidates, snapshot, feedb
 
 OBSERVED_FIELDS = ("head", "release", "readme")
 
+EVIDENCE_SUMMARY_LIMIT = 1200
+RELEASE_RECALL_LIMIT = 2000
+
+
+def evidence_summary(record, source="none", fetched_at=None, limit=EVIDENCE_SUMMARY_LIMIT):
+    """A bounded, Agent-readable digest of one upstream evidence record.
+
+    The Agent reviews a candidate from this digest instead of going back to
+    GitHub. Every section is truncated so a single long README or Release
+    body cannot crowd out the other observations.
+    """
+    record = record or {}
+    readme_text = str((record.get("readme") or {}).get("text") or "")
+    release = record.get("release") or {}
+    release_body = str(release.get("body") or "")
+    commit_lines = []
+    for row in (record.get("commits") or [])[:5]:
+        row = row or {}
+        message = str(row.get("message") or "").strip()
+        if message:
+            commit_lines.append(f"- {(row.get('sha') or '')[:12]} {message}")
+    commit_text = "\n".join(commit_lines)
+    return {
+        "source": source,
+        "fetched_at": fetched_at or record.get("fetched_at"),
+        "readme": readme_text[:limit],
+        "readme_truncated": len(readme_text) > limit,
+        "readme_blob_sha": (record.get("readme") or {}).get("blob_sha"),
+        "release": release_body[:limit],
+        "release_truncated": len(release_body) > limit,
+        "release_tag": release.get("tag"),
+        "release_url": release.get("url"),
+        "release_published_at": release.get("published_at"),
+        "commits": commit_text[:limit],
+        "commits_truncated": len(commit_text) > limit,
+        "head_sha": record.get("head_sha"),
+        "observed": record.get("observed"),
+        "probe": record.get("probe"),
+        "scope": ("README text, the latest Release body and at most five commit subjects; "
+                  "not a source diff and not proof of value"),
+    }
+
+
+EVIDENCE_RANK_THIS_RUN_DEEP = 4
+EVIDENCE_RANK_THIS_RUN_CHEAP = 3
+EVIDENCE_RANK_THIS_RUN_PARTIAL = 2
+EVIDENCE_RANK_CACHE = 1
+EVIDENCE_RANK_NONE = 0
+
+# Statuses for "this run engaged with the repository but did not end up with
+# complete evidence". The digest the Agent reads is then the last complete
+# cache, so the status names why an old digest is being shown.
+EVIDENCE_STATUS_CACHED_PARTIAL = "cached_partial"
+EVIDENCE_STATUS_CACHED_SKIPPED = "cached_skipped"
+
+
+def evidence_rank(status, source, probe=None):
+    """The queue ordering dimension of one candidate's evidence.
+
+    The dimension answers one question: how much does the run know about this
+    repository right now? A deep fetch of this run knows most, a cheap probe
+    of this run knows the Release only, a run that tried and failed knows the
+    repository changed or is worth another look, and a cache hit knows only
+    what was true when the cache was written.
+
+    The "tried this run" part is read from the status, not from the source.
+    A run that fell back to the cache still knows more than a run that never
+    touched the repository, so a fallback must not sink below a plain cache
+    hit. The status carries that history; the source only says where the
+    displayed digest came from.
+    """
+    if source == "this_run":
+        if status == "complete":
+            return (EVIDENCE_RANK_THIS_RUN_CHEAP if probe == "cheap"
+                    else EVIDENCE_RANK_THIS_RUN_DEEP)
+        if status == "partial":
+            return EVIDENCE_RANK_THIS_RUN_PARTIAL
+        return EVIDENCE_RANK_NONE
+    # The digest may come from the cache while this run still tried to fetch
+    # the repository. The status says what happened, the source says where
+    # the text came from.
+    if status in ("partial", EVIDENCE_STATUS_CACHED_PARTIAL,
+                  EVIDENCE_STATUS_CACHED_SKIPPED):
+        # This run attempted the fetch and it failed or was skipped. The run
+        # paid for the attempt and knows the repository deserves another
+        # look, so it outranks a repository this run never touched.
+        return EVIDENCE_RANK_THIS_RUN_PARTIAL
+    if status in ("cached", "stale"):
+        # A cache hit the run never touched. "stale" means the repository
+        # metadata changed since the cache was written, so the digest may
+        # already be out of date.
+        return EVIDENCE_RANK_CACHE
+    return EVIDENCE_RANK_NONE
+
+
+def evidence_detail_rank(status, source):
+    """The order inside one evidence tier.
+
+    The tier (evidence_rank) answers "how much does the run know". This
+    answers "which candidate of the same tier comes first": a partial read
+    of this run is fresher than a cache fallback, a failed fetch tells more
+    than a budget skip, and a stale digest comes before a fresh cache hit
+    because its evidence may already be wrong.
+    """
+    if source == "this_run":
+        return 4 if status == "partial" else 0
+    if status == EVIDENCE_STATUS_CACHED_PARTIAL:
+        return 3
+    if status == EVIDENCE_STATUS_CACHED_SKIPPED:
+        return 2
+    if status == "stale":
+        return 2
+    if status == "cached":
+        return 1
+    return 0
+
+
+def candidate_evidence_fields(repo):
+    """The evidence a candidate exposes to the reviewing Agent.
+
+    The status is never a hard-coded "not_fetched": it reflects the evidence
+    actually available for this repository. The summary carries the bounded
+    README, Release and commit text so the Agent can judge the candidate
+    without going back to GitHub.
+    """
+    record = repo.get("_evidence_record")
+    source = repo.get("_evidence_source") or "none"
+    status = repo.get("_evidence_status") or "not_fetched"
+    if not record:
+        # No digest at all. The status still says whether this run tried and
+        # failed, because that is part of what the Agent needs to know.
+        return {"status": status, "source": source,
+                "rank": evidence_rank(status, source),
+                "detail_rank": evidence_detail_rank(status, source),
+                "summary": None}
+    summary = evidence_summary(record, source)
+    fallback_note = repo.get("_evidence_fallback_note")
+    if fallback_note:
+        summary["fallback_note"] = fallback_note
+    return {"status": status, "source": source,
+            "rank": evidence_rank(status, source, record.get("probe")),
+            "detail_rank": evidence_detail_rank(status, source),
+            "summary": summary}
+
 
 def observed_fields(record):
     """Which upstream fields a stored evidence record actually observed.
@@ -927,6 +1072,7 @@ def prepare(snapshot, profiles, feedback, now, limit=12, per_project=2,
         repo.get("full_name") or "", repo.get("description") or "",
         repo.get("description_zh") or "", " ".join(repo.get("topics") or []),
         repo.get("_evidence_text") or "",
+        repo.get("_release_text") or "",
     ]))} for repo in snapshot.get("repos", [])]
     for profile in profiles:
         for repo in indexed_repos:
@@ -1009,6 +1155,7 @@ def prepare(snapshot, profiles, feedback, now, limit=12, per_project=2,
                                 or entry.get("last_target_revision") != profile["target_revision"]
                                 or entry.get("last_evidence_revision") != repo.get("_evidence_revision")
                                 or entry.get("state") == "stale")
+                evidence = candidate_evidence_fields(repo)
                 candidates.append({
                     "candidate_key": candidate_key,
                     "snapshot_revision": fingerprint[:24], "project_id": profile["project_id"],
@@ -1029,7 +1176,14 @@ def prepare(snapshot, profiles, feedback, now, limit=12, per_project=2,
                                     "last_shown_at": entry.get("last_shown_at"),
                                     "shown_count": entry.get("shown_count", 0),
                                     "cooldown_due": cooldown_due},
-                    "evidence_status": "not_fetched", "archived": bool(repo.get("is_archived")),
+                    "evidence_status": evidence["status"],
+                    "evidence_source": evidence["source"],
+                    "evidence_rank": evidence["rank"],
+                    "evidence_detail_rank": evidence["detail_rank"],
+                    "evidence_summary": evidence["summary"],
+                    "evidence_fetched_at": evidence["summary"].get("fetched_at")
+                    if evidence["summary"] else None,
+                    "archived": bool(repo.get("is_archived")),
                     "watch_scope": "focus" if name in focused else "collection",
                     "focus_reason": focused.get(name, {}).get("reason"),
                     "prior_decisions": [{"status": (card.get("decision") or {}).get("status"),
@@ -1039,10 +1193,15 @@ def prepare(snapshot, profiles, feedback, now, limit=12, per_project=2,
                                         for card in sorted(prior, key=lambda row: row.get("_recorded_at", ""),
                                                            reverse=True)[:3]],
                     "scope_conflicts": conflicts,
-                    "scope_status": "conflicts_with_stated_scope" if conflicts else "no_stated_scope_conflict",
+                    "scope_status": scope_status(profile, conflicts),
+                    "scope_note": scope_note(profile),
+                    "exclusion_clauses": list(profile.get("exclusion_clauses") or []),
+                    "exclusion_source": profile.get("exclusion_source"),
                 })
     candidates.sort(key=lambda c: (
         -int(c["queue_state"]["cooldown_due"]),
+        -c.get("evidence_rank", 0),
+        -int(c.get("evidence_detail_rank", 0)),
         -int("recent_star" in c["signals"]), -int("focused_watch" in c["signals"]),
         -min(c["target_activity"]["commits"], 10),
         -len(c["primary_matches"]), -len(c["matched_terms"]),
@@ -1056,7 +1215,15 @@ def select_candidates(candidates, limit, per_project, per_repo=None):
     # Cooled-down pending items get the first slice, then one item per project
     # in round-robin order, then remaining capacity by score. This prevents a
     # lexicographically early project from monopolising every round.
+    #
+    # Evidence fetched in this run is the first ordering dimension: a
+    # repository the run already paid for must reach the Agent instead of
+    # being pushed behind alphabetically earlier candidates. The fairness
+    # rules are unchanged otherwise - per-project and per-repo caps still
+    # apply, and the round-robin over projects is preserved.
     ordered = sorted(candidates, key=lambda c: (
+        -c.get("evidence_rank", 0),
+        -int(c.get("evidence_detail_rank", 0)),
         -int(c["queue_state"]["cooldown_due"]), c["queue_state"].get("shown_count", 0),
         c["queue_state"].get("first_seen_at", ""), c["project_id"], c["repo"],
         c.get("capability", {}).get("key") or ""))
@@ -1245,7 +1412,11 @@ def attach_cached_revisions(snapshot, data_dir, cache=None, unavailable=()):
         # Re-attaching after a successful refresh must clear this run's earlier
         # unknown state, rather than carrying an old private flag forward.
         repo = {key: value for key, value in repo.items()
-                if not key.startswith("_evidence_")}
+                if not key.startswith("_evidence_") and key not in
+                ("_evidence_record", "_evidence_source", "_release_text",
+                 "_capability_hints", "_evidence_text", "_evidence_revision",
+                 "_evidence_changed_at", "_evidence_status",
+                 "_evidence_fallback_note")}
         name = repo.get("full_name", "")
         cached = cache.get(name)
         if cached and cached.get("status") == "complete":
@@ -1254,9 +1425,101 @@ def attach_cached_revisions(snapshot, data_dir, cache=None, unavailable=()):
             repo = {**repo, "_evidence_revision": evidence_revision(cached),
                     "_evidence_changed_at": cached.get("changed_at"),
                     "_evidence_text": readme_text,
+                    "_evidence_record": cached,
+                    "_evidence_source": "cache",
                     "_capability_hints": capability_hints(
                         readme_text, cached.get("release"), cached.get("commits", []),
                         readme_blob_sha=blob_sha)}
+        if name in unavailable:
+            repo = {**repo, "_evidence_unavailable": True}
+        rows.append(repo)
+    return {**snapshot, "repos": rows}
+
+
+def resolve_evidence(run_record, cache_record, repo):
+    """Choose the evidence a candidate is actually judged on.
+
+    Fresh evidence from this run wins. A failed or skipped run falls back to
+    the last complete cached record. The status then names the fallback
+    ("cached_partial" for a failed fetch, "cached_skipped" for a budget
+    skip) so the Agent is not told the upstream was re-checked successfully,
+    and so "not_fetched" keeps its plain meaning: this run and the cache
+    have no evidence for this repository at all. Cached evidence is always
+    labelled with its own source and fetch time, never as this run's work.
+
+    The identity fields (revision, changed_at) always come from a complete
+    record. A partial fetch must not renumber the upstream revision, because
+    that revision is what a decision card binds to.
+    """
+    cache_complete = bool(cache_record) and cache_record.get("status") == "complete"
+    if run_record and run_record.get("status") == "complete":
+        return {"record": run_record, "identity": run_record, "source": "this_run",
+                "status": "complete"}
+    if run_record and run_record.get("status") == "partial":
+        if cache_complete:
+            return {"record": cache_record, "identity": cache_record, "source": "cache",
+                    "status": EVIDENCE_STATUS_CACHED_PARTIAL,
+                    "fallback_note": "This run's fetch failed; the digest is the last complete cache."}
+        return {"record": run_record, "identity": None, "source": "this_run",
+                "status": "partial"}
+    if run_record:
+        if cache_complete:
+            return {"record": cache_record, "identity": cache_record, "source": "cache",
+                    "status": EVIDENCE_STATUS_CACHED_SKIPPED,
+                    "fallback_note": "This run did not complete a fetch; the digest is the last complete cache."}
+        return {"record": None, "identity": None, "source": "none",
+                "status": "not_fetched"}
+    if cache_complete:
+        matched = cache_record.get("repo_revision") == repo_revision(repo)
+        return {"record": cache_record, "identity": cache_record, "source": "cache",
+                "status": "cached" if matched else "stale", "fallback": None}
+    return {"record": None, "identity": None, "source": "none",
+            "status": "not_fetched"}
+
+
+def attach_run_evidence(snapshot, run_records, cache=None, unavailable=()):
+    """Attach this run's freshly fetched evidence to the snapshot rows.
+
+    The record is attached before candidates are generated so the candidate
+    can carry the evidence text and the recall channels can use the README
+    and Release text fetched in this very run.
+    """
+    cache = cache or {}
+    unavailable = set(unavailable)
+    rows = []
+    for repo in snapshot.get("repos", []):
+        # Rebuild the evidence state from scratch. A flag set by an earlier
+        # pass (for example "the previous check failed") must not survive a
+        # check that has now succeeded.
+        repo = {key: value for key, value in repo.items()
+                if not key.startswith("_evidence_") and key not in
+                ("_release_text", "_capability_hints")}
+        name = repo.get("full_name", "")
+        run_record = (run_records or {}).get(name)
+        cache_record = cache.get(name)
+        resolved = resolve_evidence(run_record, cache_record, repo)
+        record = resolved["record"]
+        identity = resolved.get("identity")
+        if record:
+            blob_sha = (record.get("readme") or {}).get("blob_sha")
+            readme_text = str((record.get("readme") or {}).get("text") or "")
+            release_text = str((record.get("release") or {}).get("body") or "")
+            repo = {**repo,
+                    "_evidence_revision": (evidence_revision(identity) if identity else None),
+                    "_evidence_changed_at": (identity or {}).get("changed_at"),
+                    "_evidence_text": readme_text,
+                    "_release_text": release_text[:RELEASE_RECALL_LIMIT],
+                    "_evidence_record": record,
+                    "_evidence_source": resolved["source"],
+                    "_evidence_status": resolved["status"],
+                    "_evidence_fallback_note": resolved.get("fallback_note"),
+                    "_capability_hints": capability_hints(
+                        readme_text, record.get("release"), record.get("commits", []),
+                        readme_blob_sha=blob_sha)}
+        else:
+            repo = {**repo, "_evidence_record": None, "_evidence_source": "none",
+                    "_evidence_status": resolved["status"],
+                    "_evidence_fallback_note": resolved.get("fallback_note")}
         if name in unavailable:
             repo = {**repo, "_evidence_unavailable": True}
         rows.append(repo)
@@ -1466,13 +1729,14 @@ def cmd_auto(args):
     unavailable = (previous_failures - successful_now) | failed_now
     cache = {**prior, **{name: row for name, row in unique.items()
                         if row["status"] == "complete"}}
-    snapshot = attach_cached_revisions(snapshot, data_dir, cache, unavailable)
+    # This run's freshly fetched evidence is attached before the candidates are
+    # generated. The README and Release text fetched in this run therefore
+    # take part in this run's recall, and the candidates can carry the
+    # evidence the Agent has to judge.
+    snapshot = attach_run_evidence(snapshot, unique, cache, unavailable)
     candidates, suppressed, eligible = all_candidates(snapshot, queue=queue, queue_now=current)
     for name in sorted(unavailable & {row.get("full_name") for row in snapshot.get("repos", [])}):
         warnings.append(f"Watched evidence incomplete: {name}; previous complete evidence retained")
-    # Newly checked repositories must reach the review queue even when there
-    # are many old, still-unjudged candidates with a higher lexical score.
-    candidates.sort(key=lambda row: -int(row["repo"] in unique))
     all_rows = candidates
     candidates = select_candidates(candidates, args.limit, args.per_project, getattr(args, "per_repo", 3))
     if args.write:
@@ -1523,13 +1787,13 @@ def cmd_auto(args):
         name = candidate["repo"]
         cached = cache.get(name)
         value = unique.get(name)
+        # The status was already resolved from the real evidence when the
+        # candidate was built. This loop only attaches the raw record so the
+        # Agent can inspect the full upstream object behind the digest.
         if value:
             candidate["upstream_evidence"] = value
-            candidate["evidence_status"] = value["status"]
         elif cached:
             candidate["upstream_evidence"] = cached
-            candidate["evidence_status"] = ("cached" if cached.get("repo_revision") == candidate["repo_revision"]
-                                            else "stale")
         candidate["local_snapshots"] = snapshots_by_repo[name]
         target_snapshots = [local for local in snapshots_by_repo[name]
                             if local["skill_path"] == candidate.get("skill_path")]
@@ -1586,6 +1850,28 @@ def cmd_auto(args):
         "strategy": "at least half oldest-first across all Stars; remainder prioritizes metadata change, used source, new interest, focus and relevance",
         "request_budget": request_budget.report(),
     }
+    # Disclosure of the evidence/queue split. A repository the run fetched is
+    # not the same as a repository that reached the Agent: the queue caps can
+    # leave a fetched repository out. "Not in the candidates" must not be read
+    # as "nothing changed".
+    fetched_now = {name for name, row in unique.items() if row.get("status") == "complete"}
+    candidate_repos = {row["repo"] for row in candidates}
+    fetched_in_candidates = sorted(fetched_now & candidate_repos)
+    fetched_not_in_candidates = sorted(fetched_now - candidate_repos)
+    candidates_with_evidence = [row for row in candidates
+                                if row.get("evidence_summary")]
+    watch_coverage["evidence_candidates"] = {
+        "fetched_this_run": len(fetched_now),
+        "fetched_in_candidates": len(fetched_in_candidates),
+        "fetched_in_candidates_repos": fetched_in_candidates,
+        "fetched_not_in_candidates": len(fetched_not_in_candidates),
+        "fetched_not_in_candidates_repos": fetched_not_in_candidates,
+        "candidates_with_evidence": len(candidates_with_evidence),
+        "candidates_total": len(candidates),
+        "candidates_without_evidence": len(candidates) - len(candidates_with_evidence),
+        "note": ("A repository fetched this run but absent from the candidates was "
+                 "dropped by the queue caps, not found unchanged."),
+    }
     queue_entries = list((queue.get("entries") or {}).values())
     queue_pending = [entry for entry in queue_entries if entry.get("state") in {"pending", "shown"}]
     shown_pending = [entry for entry in queue_pending if entry.get("state") == "shown"]
@@ -1624,7 +1910,9 @@ def cmd_auto(args):
         "review_required": True,
         "usage_note": "Read current target implementation and upstream evidence; keep at most three valuable opportunities. Record real decisions with target_revision, repo_revision and evidence_revision via opportunity.py. No change can legitimately yield no recommendation.",
     })
-    if warnings or any(c["evidence_status"] in ("partial", "stale") for c in candidates):
+    if warnings or any(c["evidence_status"] in
+                       ("partial", "stale", EVIDENCE_STATUS_CACHED_PARTIAL,
+                        EVIDENCE_STATUS_CACHED_SKIPPED) for c in candidates):
         result["status"] = "partial"
     if args.write:
         directory = data_dir / "auto-opportunities/runs"
