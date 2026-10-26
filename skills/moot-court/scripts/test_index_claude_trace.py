@@ -2,6 +2,8 @@
 """index_claude_trace.py 的定向回归：解析真实 stream-json 结构、去重、冲突、未完成、坏JSON、来源绑定。
 
 fixture 是最小合成结构；真实 CLI 产物测试在本机归档存在时执行，缺失时显式跳过。
+入口末尾输出 MC_TRACE_COVERAGE JSON；MC_REQUIRE_REAL_TRACE=1 时真实用例未通过退出 3，
+防止仅凭合成回归 exit 0 冒称真实日志已覆盖。MC027_REAL_TRACE 指定只读原件路径。
 不启动 Agent/CLI、不联网、不读取凭证配置。
 """
 import hashlib
@@ -22,6 +24,7 @@ REAL_TRACE = Path(os.environ.get(
     "MC027_REAL_TRACE",
     REPO_ROOT / ".claude" / "agent-sessions" / "mc-z-claude-g5-261002"
     / "runtime-261002" / "g2-stream.jsonl"))
+REAL_TRACE_VERIFIED = False
 
 
 def run_indexer(*args):
@@ -169,6 +172,7 @@ class IndexClaudeTraceTest(unittest.TestCase):
 
     @unittest.skipUnless(REAL_TRACE.is_file(), "本机真实 Claude stream-json 归档不存在，跳过")
     def test_real_cli_trace_indexed(self):
+        global REAL_TRACE_VERIFIED
         output = self.tmp / "real-index.json"
         proc = run_indexer("--trace", str(REAL_TRACE), "--output", str(output))
         index = json.loads(output.read_text(encoding="utf-8"))
@@ -176,12 +180,60 @@ class IndexClaudeTraceTest(unittest.TestCase):
         self.assertGreaterEqual(index["summary"]["completed"], 1)
         self.assertEqual(index["calls"][0]["tool_name"], "Agent")
         self.assertEqual(index["final_result"]["subtype"], "success")
-        preview = "".join(c.get("result_preview") or "" for c in index["calls"])
-        self.assertIn("MOOT_G2_SUB_OK", preview)
+        # 新宿主可能在返回前加入长的来源包装，300 字预览不一定含固定短答。
+        # 从绑定行号回查原件并核结果摘要，不能把预览截断当成真实调用失败。
+        lines = REAL_TRACE.read_text(encoding="utf-8").splitlines()
+        full_results = []
+        for call in index["calls"]:
+            if call["status"] != "completed":
+                continue
+            event = json.loads(lines[call["result_line"] - 1])
+            block = next(block for block in event["message"]["content"]
+                         if block.get("tool_use_id") == call["tool_use_id"])
+            content = block["content"]
+            text = content if isinstance(content, str) else "\n".join(
+                item["text"] for item in content
+                if isinstance(item, dict) and isinstance(item.get("text"), str))
+            self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), call["result_sha256"])
+            full_results.append(text)
+        self.assertIn("MOOT_G2_SUB_OK", "\n".join(full_results))
         digest = hashlib.sha256(REAL_TRACE.read_bytes()).hexdigest()
         self.assertEqual(index["trace_sha256"], digest)
         self.assertTrue(index["session_ids"])
+        REAL_TRACE_VERIFIED = True
+
+    def test_missing_real_trace_coverage_contract(self):
+        missing = self.tmp / "missing-native-trace.jsonl"
+        env = dict(os.environ, MC027_REAL_TRACE=str(missing))
+        selected = ["IndexClaudeTraceTest.test_fixture_real_format_completed_call",
+                    "IndexClaudeTraceTest.test_real_cli_trace_indexed"]
+        for strict, expected in (("0", 0), ("1", 3)):
+            with self.subTest(strict=strict):
+                env["MC_REQUIRE_REAL_TRACE"] = strict
+                proc = subprocess.run([sys.executable, "-B", str(Path(__file__)), *selected],
+                                      env=env, capture_output=True, text=True, timeout=120)
+                self.assertEqual(proc.returncode, expected, proc.stdout + proc.stderr)
+                line = next(line for line in proc.stdout.splitlines()
+                            if line.startswith("MC_TRACE_COVERAGE "))
+                coverage = json.loads(line.partition(" ")[2])
+                self.assertEqual(coverage["real_trace"], "NOT_VERIFIED")
+                self.assertEqual(coverage["skipped"], 1)
+                self.assertTrue(coverage["suite_ok"])
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    program = unittest.main(verbosity=2, exit=False)
+    strict = os.environ.get("MC_REQUIRE_REAL_TRACE", "0")
+    if strict not in ("0", "1"):
+        print("MC_REQUIRE_REAL_TRACE 仅接受 0 或 1", file=sys.stderr)
+        raise SystemExit(2)
+    result = program.result
+    print("MC_TRACE_COVERAGE " + json.dumps({
+        "suite_ok": result.wasSuccessful(),
+        "tests_run": result.testsRun,
+        "skipped": len(result.skipped),
+        "real_trace": "VERIFIED" if REAL_TRACE_VERIFIED else "NOT_VERIFIED",
+        "require_real_trace": strict == "1",
+    }, ensure_ascii=False, sort_keys=True))
+    raise SystemExit(1 if not result.wasSuccessful()
+                     else 3 if strict == "1" and not REAL_TRACE_VERIFIED else 0)

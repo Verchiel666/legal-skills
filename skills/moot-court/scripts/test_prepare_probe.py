@@ -127,6 +127,21 @@ class PrepareProbeTest(unittest.TestCase):
         for value in ("D-004", "scoring_steps", "semantic_boundaries", "expected_use"):
             self.assertNotIn(value, text)
 
+    def test_reviewer_visibility_matches_distributed_civil_case(self):
+        """复核依据的编号与公开/私有分类必须绑定实际分发的民事案卷。"""
+        asset = json.loads(REVIEWER_ASSET.read_text(encoding="utf-8"))
+        case = json.loads((SCRIPTS.parent / "assets" / "civil-case.example.json")
+                          .read_text(encoding="utf-8"))
+        documents = {doc["id"]: doc for doc in case["documents"]}
+        audiences = {"公开": ["all"], "原告私有": ["plaintiff"], "被告私有": ["defendant"]}
+        for doc_id, expectation in asset["material_expectations"].items():
+            if doc_id == "note":
+                continue
+            with self.subTest(doc_id=doc_id):
+                self.assertIn(doc_id, documents)
+                self.assertIn(expectation["type"], audiences)
+                self.assertEqual(documents[doc_id]["visible_to"], audiences[expectation["type"]])
+
     def test_refuses_overwrite_and_leaves_file_intact(self):
         self.assertEqual(self.dispatch("plaintiff").returncode, 0)
         finished, output = self.prepare("probe-overwrite.json")
@@ -265,8 +280,8 @@ class PrepareProbeTest(unittest.TestCase):
         payload = json.loads((self.tmp / "probe-rel.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["role"], "plaintiff")
 
-    def test_role_task_allows_own_private_materials_only(self):
-        """NB-2：角色任务允许引用己方私有编号，但 citations 口径与书记员一致。"""
+    def test_role_task_blocks_private_material_identifiers(self):
+        """角色任务必须与 v1.2.5 一致：私有编号不得进入公开稿或 citations。"""
         expectations = {"plaintiff": "D-001", "defendant": "D-004"}
         for role, private_id in expectations.items():
             with self.subTest(role=role):
@@ -277,6 +292,8 @@ class PrepareProbeTest(unittest.TestCase):
                 text = "\n".join(payload["role_task"])
                 self.assertIn(private_id, {doc["id"] for doc in payload["documents"]})
                 self.assertIn("本方私有", text)
+                self.assertIn("只能引用", text)
+                self.assertNotIn("可以引用你本轮可见的任何材料编号", text)
                 # 不得鼓励越界读取运行目录内部结构
                 for banned in ("manifest", "events"):
                     self.assertNotIn(f"去读{banned}", text)
