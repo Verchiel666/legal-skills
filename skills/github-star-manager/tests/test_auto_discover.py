@@ -74,7 +74,8 @@ class DiscoveryTests(unittest.TestCase):
         return SimpleNamespace(**dict(dict(project=None, skills_root=[self.skills], repo_root=None,
             data_dir=self.data, refresh=False, fetch_evidence=False, evidence_limit=2,
             limit=12, per_project=2, recent_days=14, update_days=7, write=False,
-            show_suppressed=False, focus_limit=8), **overrides))
+            show_suppressed=False, focus_limit=8, request_budget=60,
+            cheap_budget=0), **overrides))
 
     def focus(self, names):
         ad.atomic_json(self.data / ad.FOCUS_FILE, {"repositories": {
@@ -166,6 +167,33 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn("voice", profile["primary_terms"])
         self.assertNotIn("lipsync", profile["primary_terms"])
 
+    def test_implementation_excerpt_adds_real_capability_and_respects_exclusions(self):
+        (self.directory / "scripts").mkdir()
+        (self.directory / "scripts" / "engine.py").write_text(
+            "def transition_timeline(): pass\n", encoding="utf-8")
+        static = write_skill(self.skills, "static-ip", "维护角色静帧素材。不承担配音或口型动画。")
+        (static / "engine.py").write_text(
+            "def render_static_avatar(): pass\n", encoding="utf-8")
+        profiles = {p["project_id"]: p for p in self.profiles()}
+        self.assertIn("transition", profiles["sample-video"]["search_terms"])
+        self.assertTrue(profiles["sample-video"]["implementation_excerpt_refs"])
+        self.assertIn("avatar", profiles["static-ip"]["search_terms"])
+        for term in ("voice", "tts", "配音", "lipsync", "口型"):
+            self.assertNotIn(term, profiles["static-ip"]["search_terms"])
+
+    def test_exclusion_uses_word_boundaries_and_positive_claim_wins(self):
+        boundary = write_skill(self.skills, "legal-search",
+                               "法律检索。不要用于 academic research 场景。")
+        positive = write_skill(self.skills, "voice-clips",
+                               "负责配音的短视频工具。不承担长篇配音课程。")
+        profiles = {p["project_id"]: p for p in self.profiles()}
+        for term in ("search", "检索", "retrieval"):
+            self.assertIn(term, profiles["legal-search"]["search_terms"])
+        for term in ("voice", "tts", "配音", "语音合成"):
+            self.assertIn(term, profiles["voice-clips"]["search_terms"])
+        self.assertNotIn("cad", profiles["legal-search"]["search_terms"])
+        self.assertTrue(boundary.is_dir() and positive.is_dir())
+
     def test_unknown_and_future_star_are_not_recent_interest(self):
         for starred in (None, "nonsense", "2099-01-01T00:00:00Z"):
             selected, _, _ = ad.prepare(snapshot([{**repo(), "starred_at": starred}]), self.profiles(), {}, NOW)
@@ -178,7 +206,7 @@ class DiscoveryTests(unittest.TestCase):
         card = {"target": {"project_id": profile["project_id"], "target_revision": profile["target_revision"]},
                 "signal": {"repo": repo()["full_name"], "repo_revision": ad.repo_revision(repo())},
                 "decision": {"status": "rejected"}, "_recorded_at": NOW.isoformat()}
-        feedback = {(profile["project_id"], repo()["full_name"]): [card]}
+        feedback = {(profile["project_id"], repo()["full_name"], "legacy", None): [card]}
         selected, suppressed, _ = ad.prepare(snapshot([repo()]), [profile], feedback, NOW)
         self.assertFalse(selected)
         self.assertEqual(len(suppressed), 1)
@@ -235,7 +263,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(rc, 1)
 
     def test_full_refresh_real_writer_and_failure_retains_baseline(self):
-        responses = [{"login": "sample"}, [[{"starred_at": repo()["starred_at"], "repo": repo()}]]]
+        responses = [{"login": "sample"}, [{"starred_at": repo()["starred_at"], "repo": repo()}]]
         with patch.object(ad, "github_get", side_effect=responses):
             saved = ad.refresh_snapshot(self.data, None)
         self.assertEqual(saved["repos"][0]["id"], 1)
@@ -297,7 +325,7 @@ class DiscoveryTests(unittest.TestCase):
                            "evidence_revision": ad.evidence_revision(cached_v1)},
                 "decision": {"status": "experiment_proposed"},
                 "_recorded_at": (NOW - timedelta(days=1)).isoformat()}
-        feedback = {(profile["project_id"], row["full_name"]): [card]}
+        feedback = {(profile["project_id"], row["full_name"], "legacy", None): [card]}
         ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
         readme = {"content": "ZGVtbyByZWFkbWU=", "sha": "readme-stable",
                   "html_url": "https://github.com/sample/subtitle"}
@@ -354,7 +382,11 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(watched[0]["affected_targets"], [])
         self.assertEqual(result["coverage"]["focused_repositories"], 1)
         self.assertEqual(result["coverage"]["focus_not_fetched"], ["other/toolbox"])
-        with patch.object(ad, "github_get", side_effect=self.github_evidence):
+        def github(endpoint, **kwargs):
+            if "/releases?" in endpoint:
+                return [{"tag_name": "v1", "body": "old"}]
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
             _, fetched = capture(ad.cmd_auto, self.args(fetch_evidence=True))
         self.assertEqual(fetched["focus_deltas"][0]["evidence_status"], "complete")
         self.assertEqual(fetched["coverage"]["focus_not_fetched"], [])
@@ -476,7 +508,11 @@ class DiscoveryTests(unittest.TestCase):
         row = repo()
         self.focus([row["full_name"]])
         ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
-        with patch.object(ad, "github_get", side_effect=self.github_evidence):
+        def github(endpoint, **kwargs):
+            if "/releases?" in endpoint:
+                return [{"tag_name": "v1", "body": "old"}]
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
             _, first = capture(ad.cmd_auto, self.args(fetch_evidence=True))
         item = first["items"][0]
         ad.atomic_json(self.data / "feedback" / "decision.json", {
@@ -484,7 +520,11 @@ class DiscoveryTests(unittest.TestCase):
             "signal": {"repo": row["full_name"], "repo_id": row["id"],
                        "repo_revision": item["repo_revision"], "evidence_revision": item["evidence_revision"]},
             "decision": {"status": "rejected"}, "_recorded_at": NOW.isoformat()})
-        with patch.object(ad, "github_get", side_effect=self.github_evidence):
+        def github(endpoint, **kwargs):
+            if "/releases?" in endpoint:
+                return [{"tag_name": "v1", "body": "old"}]
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
             _, same = capture(ad.cmd_auto, self.args(fetch_evidence=True))
         self.assertFalse(same["items"])
         self.assertEqual(same["focus_deltas"][0]["new_commits"], [])
@@ -508,6 +548,401 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual([row["sha"] for row in ad.evidence_delta("a/b", current, prior)["new_commits"]],
                          ["new"])
 
+    def test_release_capability_recalls_new_component_direction(self):
+        write_skill(self.skills, "transition-kit", "视频转场与动效")
+        row = repo()
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "stable readme"},
+                  "release": {"tag": "v2", "url": "https://example.test/v2",
+                              "body": "Added transition timeline export"},
+                  "changed_at": (NOW - timedelta(hours=1)).isoformat()}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        _, result = capture(ad.cmd_auto, self.args())
+        rows = {(item["project_id"], item["capability"]["key"]): item for item in result["items"]}
+        transition = next(key for key in rows if key[0] == "transition-kit")
+        self.assertEqual(transition[1], "transition")
+        self.assertEqual(rows[transition]["capability"]["anchor"], "v2")
+        self.assertEqual(rows[transition]["decision_scope"], "direction")
+
+    def test_direction_feedback_does_not_suppress_other_direction(self):
+        write_skill(self.skills, "transition-kit", "视频转场与动效")
+        row = repo()
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "stable readme"},
+                  "release": {"tag": "v2", "body": "Added subtitle support\nAdded transition export"},
+                  "changed_at": (NOW - timedelta(hours=1)).isoformat()}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        profiles = self.profiles()
+        subtitle = next(p for p in profiles if p["project_id"] == "sample-video")
+        ad.atomic_json(self.data / "feedback" / "direction.json", {
+            "scope": "direction",
+            "target": {"project_id": subtitle["project_id"],
+                       "target_revision": subtitle["target_revision"],
+                       "capability_key": "subtitle"},
+            "signal": {"repo": row["full_name"], "repo_id": row["id"],
+                       "repo_revision": ad.repo_revision(row),
+                       "evidence_revision": ad.evidence_revision(cached)},
+            "decision": {"status": "rejected", "reason": "no local gap"},
+            "_recorded_at": NOW.isoformat(), "_schema": "opportunity-card/1.1"})
+        _, result = capture(ad.cmd_auto, self.args(limit=20, per_project=4, per_repo=10))
+        rows = [item for item in result["items"] if item["repo"] == row["full_name"]]
+        keys = {(item["project_id"], item["capability"]["key"]) for item in rows}
+        self.assertIn(("transition-kit", "transition"), keys)
+        self.assertNotIn((subtitle["project_id"], "subtitle"), keys)
+        self.assertEqual(result["suppressed"][0]["capability_key"], "subtitle")
+
+    def test_capability_key_defaults_to_direction_without_suppressing_other_direction(self):
+        write_skill(self.skills, "transition-kit", "视频转场与动效")
+        row = {**repo(), "description": "database utilities", "topics": []}
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "database utilities"},
+                  "release": {"tag": "v2", "body": "Added subtitle support\nAdded transition export"}}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        subtitle = next(p for p in self.profiles() if p["project_id"] == "sample-video")
+        ad.atomic_json(self.data / "feedback" / "decision.json", {
+            "target": {"project_id": subtitle["project_id"],
+                       "target_revision": subtitle["target_revision"],
+                       "capability_key": "subtitle"},
+            "signal": {"repo": row["full_name"], "repo_id": row["id"],
+                       "repo_revision": ad.repo_revision(row),
+                       "evidence_revision": ad.evidence_revision(cached)},
+            "decision": {"status": "rejected", "reason": "no local gap"},
+            "_recorded_at": NOW.isoformat(), "_schema": "opportunity-card/1.1"})
+        _, result = capture(ad.cmd_auto, self.args(limit=20, per_project=4, per_repo=10))
+        rows = [item for item in result["items"] if item["repo"] == row["full_name"]]
+        self.assertEqual([(row["project_id"], row["capability"]["key"]) for row in rows],
+                         [("transition-kit", "transition")])
+        suppressed = [row for row in result["suppressed"]
+                      if row["project_id"] == subtitle["project_id"]]
+        self.assertEqual(suppressed[0]["decision_scope"], "direction")
+        self.assertEqual(suppressed[0]["capability_key"], "subtitle")
+
+    def test_release_hint_recalls_when_metadata_and_readme_do_not_match(self):
+        write_skill(self.skills, "transition-kit", "视频转场与动效")
+        row = {**repo(), "description": "database utilities", "topics": []}
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "database utilities"},
+                  "release": {"tag": "v2", "body": "Added transition export"}}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        _, result = capture(ad.cmd_auto, self.args())
+        rows = [item for item in result["items"] if item["project_id"] == "transition-kit"]
+        self.assertEqual(len(rows), 1)
+        item = rows[0]
+        self.assertEqual(item["project_id"], "transition-kit")
+        self.assertEqual(item["capability"]["key"], "transition")
+        self.assertEqual(item["capability"]["anchor"], "v2")
+
+    def test_legacy_feedback_still_suppresses_repository_candidate(self):
+        row = repo()
+        profile = self.profiles()[0]
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        ad.atomic_json(self.data / "feedback" / "legacy.json", {
+            "target": {"project_id": profile["project_id"],
+                       "target_revision": profile["target_revision"]},
+            "signal": {"repo": row["full_name"], "repo_id": row["id"],
+                       "repo_revision": ad.repo_revision(row)},
+            "decision": {"status": "rejected"}, "_recorded_at": NOW.isoformat(),
+            "_schema": "opportunity-card/1.0"})
+        _, result = capture(ad.cmd_auto, self.args())
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["coverage"]["suppressed"], 1)
+        self.assertEqual(result["suppressed"][0]["decision_scope"], "legacy")
+
+    def test_review_queue_persists_and_rotates_unjudged_components(self):
+        for index in range(10):
+            write_skill(self.skills, f"video-{index}", "视频字幕时间轴")
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        seen = set()
+        for day in range(4):
+            with patch.object(ad, "now_utc", return_value=NOW + timedelta(days=day)):
+                _, result = capture(ad.cmd_auto, self.args(
+                write=True, limit=3, per_project=1, per_repo=3,
+                data_dir=self.data))
+            keys = [item["candidate_key"] for item in result["items"]]
+            queue = ad.read_json(self.data / ad.QUEUE_FILE)
+            self.assertEqual(queue["cursor"]["round_seq"], day + 1)
+            self.assertEqual(set(queue["last_run_selected_keys"]), set(keys))
+            seen.update(keys)
+            # Advance persisted times without rewriting source clocks.
+            for entry in queue["entries"].values():
+                entry["last_shown_at"] = (NOW + timedelta(days=day)).isoformat()
+            ad.atomic_json(self.data / ad.QUEUE_FILE, queue)
+        self.assertGreaterEqual(len(seen), 10)
+
+    def test_review_queue_marks_standard_direction_feedback_judged(self):
+        row = repo()
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "demo readme"},
+                  "release": {"tag": "v2", "body": "Added subtitle support"},
+                  "changed_at": (NOW - timedelta(hours=1)).isoformat()}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        _, first = capture(ad.cmd_auto, self.args(write=True))
+        item = first["items"][0]
+        ad.atomic_json(self.data / "feedback" / "decision.json", {
+            "scope": "direction",
+            "target": {"project_id": item["project_id"],
+                       "target_revision": item["target_revision"],
+                       "capability_key": item["capability"]["key"]},
+            "signal": {"repo": row["full_name"], "repo_id": row["id"],
+                       "repo_revision": item["repo_revision"],
+                       "evidence_revision": item["evidence_revision"]},
+            "decision": {"status": "rejected", "reason": "no local gap"},
+            "_recorded_at": NOW.isoformat(), "_schema": "opportunity-card/1.1"})
+        _, second = capture(ad.cmd_auto, self.args(write=True))
+        queue = ad.read_json(self.data / ad.QUEUE_FILE)
+        entry = queue["entries"][item["candidate_key"]]
+        self.assertEqual(entry["state"], "judged")
+        self.assertEqual(entry["judged_ref"], "decision.json")
+        self.assertFalse(second["items"])
+
+    def test_request_budget_caps_get_calls_and_reports_usage(self):
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        calls = []
+        def counted(endpoint, **kwargs):
+            calls.append(endpoint)
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=counted):
+            _, result = capture(ad.cmd_auto, self.args(
+                fetch_evidence=True, evidence_limit=2, request_budget=3))
+        report = result["coverage"]["watch_coverage"]["request_budget"]
+        self.assertEqual(report["limit"], 3)
+        self.assertLessEqual(report["used"], 3)
+        self.assertTrue(report["exhausted"] or report["used"] == 3)
+
+    def test_refresh_counts_each_star_page_against_the_budget(self):
+        rows = [{**repo(f"sample/subtitle{i}"), "id": i} for i in range(100)]
+        pages = [rows[:100], [rows[0]]]  # synthetic second page triggers a duplicate
+        ad.atomic_json(self.data / "original_latest.json", snapshot([]))
+        calls = []
+        def github(endpoint, **kwargs):
+            calls.append(endpoint)
+            if endpoint == "user":
+                return {"login": "sample"}
+            if endpoint.endswith("&page=1"):
+                return pages[0]
+            if endpoint.endswith("&page=2"):
+                return pages[1]
+            raise AssertionError(endpoint)
+        with patch.object(ad, "github_get", side_effect=github):
+            with self.assertRaises(ValueError):
+                ad.refresh_snapshot(self.data, None, ad.RequestBudget(3))
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(calls[1].endswith("&page=1"))
+        self.assertTrue(calls[2].endswith("&page=2"))
+
+    def test_refresh_and_compare_share_the_same_request_budget(self):
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), {
+            "status": "complete", "head_sha": "a" * 40,
+            "repo_revision": ad.repo_revision(row),
+            "readme": {"blob_sha": "stable", "text": "stable"},
+            "release": None})
+        pinned, head = "a" * 40, "b" * 40
+        library = self.directory / "reference-library"
+        (library / "sources" / "sample--subtitle").mkdir(parents=True)
+        ad.atomic_json(library / "manifests" / "sample--subtitle.json",
+                       {"repo": row["full_name"], "commit": pinned})
+        calls = []
+        def github(endpoint, **kwargs):
+            calls.append(endpoint)
+            if endpoint == "user":
+                return {"login": "sample"}
+            if "user/starred" in endpoint:
+                return [{"starred_at": row["starred_at"], "repo": row}]
+            if "/commits?" in endpoint:
+                return [{"sha": head, "commit": {"message": "new"}}]
+            if "/compare/" in endpoint:
+                return {"status": "ahead", "files": []}
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
+            _, result = capture(ad.cmd_auto, self.args(
+                refresh=True, fetch_evidence=True, evidence_limit=1,
+                request_budget=8))
+        report = result["coverage"]["watch_coverage"]["request_budget"]
+        self.assertLessEqual(report["used"], 8)
+        self.assertEqual(report["used"], len(calls))
+        self.assertGreater(report["by_kind"].get("refresh", 0), 0)
+        self.assertGreater(report["by_kind"].get("compare", 0), 0)
+
+
+    def test_budget_skip_does_not_advance_checked_or_release_suppression(self):
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "stable readme"},
+                  "release": {"tag": "v1", "body": "old", "url": None,
+                              "published_at": None},
+                  "fetched_at": (NOW - timedelta(days=2)).isoformat(),
+                  "changed_at": (NOW - timedelta(days=2)).isoformat()}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "auto-opportunities" / "watch.json", {
+            row["full_name"]: {"checked_at": (NOW - timedelta(days=2)).isoformat(),
+                               "status": "complete", "repo_id": row["id"],
+                               "repo": row["full_name"],
+                               "repo_revision": ad.repo_revision(row)}})
+        with patch.object(ad, "github_get", side_effect=ad.BudgetExceeded("test")):
+            _, result = capture(ad.cmd_auto, self.args(
+                fetch_evidence=True, evidence_limit=1, request_budget=1))
+        # Deep evidence issues readme first and is skipped before any partial
+        # data can replace the complete cache.
+        coverage = result["coverage"]["watch_coverage"]
+        self.assertEqual(coverage["skipped_budget"], [row["full_name"]])
+        self.assertEqual(coverage["checked"], 0)
+        self.assertEqual(coverage["not_checked"], 1)
+        stored = ad.read_json(ad.evidence_cache(self.data, row["full_name"]))
+        self.assertEqual(stored["changed_at"], cached["changed_at"])
+        watch = ad.read_json(self.data / "auto-opportunities" / "watch.json")
+        self.assertEqual(watch[row["full_name"]]["checked_at"],
+                         (NOW - timedelta(days=2)).isoformat())
+        self.assertTrue(watch[row["full_name"]]["last_attempt_at"])
+
+    def test_first_cheap_probe_persists_release_baseline(self):
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        release = [{"tag_name": "v1", "body": "initial", "html_url": "https://example.test/v1"}]
+        def github(endpoint, **kwargs):
+            return release if "/releases?" in endpoint else self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
+            _, first = capture(ad.cmd_auto, self.args(
+                fetch_evidence=True, evidence_limit=0,
+                cheap_budget=1, request_budget=4))
+        stored = ad.read_json(ad.evidence_cache(self.data, row["full_name"]))
+        self.assertEqual(stored["release"]["tag"], "v1")
+        self.assertEqual(stored["probe"], "cheap")
+        self.assertTrue(stored.get("changed_at"))
+        self.assertEqual(first["coverage"]["watch_coverage"]["cheap_probed"],
+                         [row["full_name"]])
+
+    def test_cheap_probe_uses_one_get_and_keeps_previous_evidence(self):
+        row = repo()
+        other = {**repo("sample/other", push="2026-10-21T00:00:00Z"), "id": 2}
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "stable readme"},
+                  "release": {"tag": "v1", "body": "old"}, "fetched_at": NOW.isoformat()}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row, other]))
+        calls = []
+        def counted(endpoint, **kwargs):
+            calls.append(endpoint)
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=counted):
+            _, result = capture(ad.cmd_auto, self.args(fetch_evidence=True, evidence_limit=1,
+                                                      request_budget=4, cheap_budget=1))
+        cheap = result["coverage"]["watch_coverage"]["cheap_probed"]
+        self.assertTrue(cheap)
+        stored = ad.read_json(ad.evidence_cache(self.data, row["full_name"]))
+        self.assertEqual(stored["readme"]["blob_sha"], "readme-stable")
+        self.assertEqual(stored["probe"], "cheap")
+
+    def test_cheap_probe_legacy_cache_does_not_refresh_changed_at(self):
+        row = repo()
+        cached = {"status": "complete", "head_sha": "head", "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row),
+                  "readme": {"blob_sha": "readme-stable", "text": "stable readme"},
+                  "release": None, "fetched_at": NOW.isoformat(),
+                  "changed_at": "2026-10-01T00:00:00+00:00"}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        def github(endpoint, **kwargs):
+            if "/releases?" in endpoint:
+                return [{"tag_name": "v1", "body": "old"}]
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
+            _, result = capture(ad.cmd_auto, self.args(
+                fetch_evidence=True, evidence_limit=1,
+                cheap_budget=1, request_budget=2))
+        stored = ad.read_json(ad.evidence_cache(self.data, row["full_name"]))
+        self.assertEqual(stored["changed_at"], cached["changed_at"])
+        self.assertFalse(result["items"][0]["upstream_change"]["changed"] or {})
+
+    def test_observed_field_change_matrix(self):
+        row = repo()
+
+        def record(head="h", release={"tag": "v1"}, readme="r", observed=None, cheap=False):
+            value = {"head_sha": head, "release": release,
+                     "readme": {"blob_sha": readme} if readme is not None else None}
+            if observed:
+                value["observed"] = observed
+            if cheap:
+                value["probe"] = "cheap"
+            return value
+
+        # Deep baseline -> deep unchanged: no change.
+        self.assertFalse(ad.compare_observed(record(), record(), ad.observed_fields(record()))["release_changed"])
+        # Deep v1 -> deep v2: change.
+        self.assertTrue(ad.compare_observed(record(release={"tag": "v2"}), record(),
+                                           ad.observed_fields(record()))["release_changed"])
+        # Cheap baseline v1 -> deep v2: observed Release change.
+        cheap = record(head=None, readme=None, observed={"head": False, "release": True,
+                                                          "readme": False}, cheap=True)
+        self.assertTrue(ad.compare_observed(record(release={"tag": "v2"}), cheap,
+                                           {"head": True, "release": True, "readme": True})["release_changed"])
+        # Cheap baseline with no observed release -> true release appears.
+        no_release = record(head=None, release=None, readme=None,
+                            observed={"head": False, "release": True, "readme": False},
+                            cheap=True)
+        self.assertTrue(ad.compare_observed(record(release={"tag": "v1"}), no_release,
+                                           {"head": True, "release": True, "readme": True})["release_changed"])
+        # Cheap baseline v1 -> deep same v1: HEAD/README unknown, no Release change.
+        same = ad.compare_observed(record(), cheap,
+                                   {"head": True, "release": True, "readme": True})
+        self.assertEqual(same, {"head_changed": None, "release_changed": False,
+                                "readme_changed": None})
+        self.assertFalse(ad.any_change(same))
+
+    def test_deep_probe_after_cheap_baseline_treats_missing_fields_as_unknown(self):
+        row = repo()
+        cached = {"status": "complete", "head_sha": None, "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row), "readme": None,
+                  "release": {"tag": "v1", "url": None,
+                              "published_at": None, "body": "old"},
+                  "fetched_at": (NOW - timedelta(hours=2)).isoformat(),
+                  "changed_at": (NOW - timedelta(hours=2)).isoformat(),
+                  "probe": "cheap"}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        def github(endpoint, **kwargs):
+            if "/releases?" in endpoint:
+                return [{"tag_name": "v1", "body": "old"}]
+            return self.github_evidence(endpoint, **kwargs)
+        with patch.object(ad, "github_get", side_effect=github):
+            _, result = capture(ad.cmd_auto, self.args(fetch_evidence=True))
+        item = result["items"][0]
+        changed = item["upstream_change"]["changed"]
+        self.assertEqual((changed["head_changed"], changed["readme_changed"],
+                          changed["release_changed"]), (None, None, False))
+        stored = ad.read_json(ad.evidence_cache(self.data, row["full_name"]))
+        self.assertEqual(stored["changed_at"], cached["changed_at"])
+
+    def test_corrupt_review_queue_preserves_original_and_degrades(self):
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        path = self.data / ad.QUEUE_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{broken", encoding="utf-8")
+        before = path.read_bytes()
+        _, result = capture(ad.cmd_auto, self.args())
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["coverage"]["review_queue"]["queue_state"], "degraded")
+        self.assertTrue(any("review queue" in warning.lower() for warning in result["warnings"]))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertTrue(list(path.parent.glob("review-queue.json.corrupt-*")))
+
     def test_all_stars_and_focus_rotate_beyond_candidate_and_evidence_limits(self):
         rows = [{**repo(f"sample/subtitle{i}"), "id": i} for i in range(6)]
         rows[-1] = {**rows[-1], "description": "unrelated", "topics": []}
@@ -520,7 +955,7 @@ class DiscoveryTests(unittest.TestCase):
                 _, result = capture(ad.cmd_auto, self.args(fetch_evidence=True, evidence_limit=2,
                                                            focus_limit=1, limit=1, per_project=1))
             coverage = result["coverage"]["watch_coverage"]
-            self.assertLessEqual(coverage["checked"], 2)
+            self.assertLessEqual(coverage["checked"], 3)
             self.assertEqual(coverage["not_checked"], 6 - coverage["checked"])
             checked = coverage["checked_repos"]
             self.assertLessEqual(sum(name in {row["full_name"] for row in rows[:4]} for name in checked), 1)
@@ -574,6 +1009,20 @@ class DiscoveryTests(unittest.TestCase):
         with patch.object(ad, "github_get", side_effect=self.github_evidence):
             _, recovered = capture(ad.cmd_auto, self.args(fetch_evidence=True))
         self.assertFalse(recovered["items"])
+
+    def test_budget_skip_preserves_previous_failure_until_complete(self):
+        row = repo()
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        with patch.object(ad, "github_get", side_effect=RuntimeError("temporary failure")):
+            _, partial = capture(ad.cmd_auto, self.args(fetch_evidence=True))
+        self.assertTrue(partial["coverage"]["watch_coverage"]["failed_deep"])
+        with patch.object(ad, "github_get", side_effect=ad.BudgetExceeded("test")):
+            _, skipped = capture(ad.cmd_auto, self.args(fetch_evidence=True, request_budget=1))
+        self.assertEqual(skipped["coverage"]["watch_coverage"]["skipped_budget"],
+                         [row["full_name"]])
+        _, offline = capture(ad.cmd_auto, self.args())
+        self.assertEqual(offline["coverage"]["watch_coverage"]["unresolved_previous_failures"],
+                         [row["full_name"]])
 
     def test_unrelated_scope_exclusions_do_not_create_components_or_conflicts(self):
         write_skill(self.skills, "browser-shell", "浏览器操作。不要用于法律检索。")
@@ -698,6 +1147,449 @@ class DiscoveryTests(unittest.TestCase):
         invalid = subprocess.run([sys.executable, "-B", str(SCRIPTS / "auto_discover.py"),
             "auto-discover", "--limit", "0"], capture_output=True, text=True)
         self.assertEqual(invalid.returncode, 2)
+
+
+class CandidateEvidenceTests(unittest.TestCase):
+    """The candidate queue must carry the evidence the run already paid for.
+
+    The real daily run fetched 24 repositories but returned 12 candidates
+    that carried no evidence at all, and none of the deeply checked
+    repositories reached the Agent.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.skills = self.root / "skills"
+        self.skills.mkdir()
+        self.data = self.root / "data"
+        self.data.mkdir()
+        for index in range(4):
+            write_skill(self.skills, f"proj{index}", "视频字幕渲染与时间轴工具")
+
+    def args(self, **overrides):
+        return SimpleNamespace(**dict(dict(project=None, skills_root=[self.skills], repo_root=None,
+            data_dir=self.data, refresh=False, fetch_evidence=True, evidence_limit=4,
+            limit=12, per_project=2, recent_days=14, update_days=7, write=False,
+            show_suppressed=False, focus_limit=8, request_budget=60,
+            cheap_budget=0), **overrides))
+
+    def weak_repos(self, count=24):
+        return [{"id": index + 1, "full_name": f"aaa/weak{index:02d}",
+                 "description": "generic utility toolkit", "topics": [],
+                 "starred_at": "2026-10-20T00:00:00Z", "pushed_at": "2026-10-21T00:00:00Z"}
+                for index in range(count)]
+
+    def strong_repos(self):
+        names = ["zzz/lemomo-opuscar", "zzz/motion-reel", "zzz/claude-anim", "zzz/taste-skill"]
+        return [{"id": 100 + index, "full_name": name,
+                 "description": "video animation motion graphics film",
+                 "topics": ["video", "animation"],
+                 "starred_at": "2026-10-20T00:00:00Z", "pushed_at": "2026-10-21T00:00:00Z"}
+                for index, name in enumerate(names)]
+
+    def evidence_response(self, endpoint, **kwargs):
+        if "/readme" in endpoint:
+            import base64
+            body = base64.b64encode(b"README with subtitle timeline render notes").decode()
+            return {"content": body, "sha": "readme-sha"}
+        if "/releases?" in endpoint:
+            return [{"tag_name": "v2", "body": "New: added support for subtitle captions",
+                     "url": "https://example.test/v2", "published_at": "2026-10-22T00:00:00Z"}]
+        if "/commits?" in endpoint:
+            return [{"sha": "head-sha", "commit": {"message": "add subtitle support"}}]
+        raise AssertionError(endpoint)
+
+    def run_with_evidence(self, repos, **overrides):
+        ad.atomic_json(self.data / "original_latest.json", snapshot(repos))
+        with patch.object(ad, "github_get", side_effect=self.evidence_response):
+            return capture(ad.cmd_auto, self.args(**overrides))
+
+    def test_fetched_repositories_reach_the_candidates_with_complete_evidence(self):
+        # Every repository the run fetched must be visible to the Agent. The
+        # alphabetical weak matches must not push the fetched ones out.
+        rc, result = self.run_with_evidence(self.weak_repos() + self.strong_repos(),
+                                             evidence_limit=4)
+        self.assertEqual(rc, 0)
+        fetched = {row["full_name"] for row in self.strong_repos()}
+        returned = {row["repo"] for row in result["items"]}
+        self.assertTrue(fetched <= returned,
+                        f"Fetched repositories missing from the candidates: {fetched - returned}")
+        for row in result["items"]:
+            if row["repo"] in fetched:
+                self.assertEqual(row["evidence_status"], "complete")
+                self.assertEqual(row["evidence_source"], "this_run")
+                self.assertEqual(row["evidence_rank"], 4)
+
+    def test_candidate_carries_the_readme_release_and_commit_digest(self):
+        _, result = self.run_with_evidence(self.weak_repos() + self.strong_repos(),
+                                           evidence_limit=4)
+        fetched = [row for row in result["items"]
+                   if row["repo"] in {r["full_name"] for r in self.strong_repos()}]
+        self.assertTrue(fetched)
+        summary = fetched[0]["evidence_summary"]
+        self.assertIn("subtitle timeline", summary["readme"])
+        self.assertIn("subtitle captions", summary["release"])
+        self.assertIn("add subtitle support", summary["commits"])
+        self.assertEqual(summary["source"], "this_run")
+        self.assertIsNotNone(summary["fetched_at"])
+
+    def test_evidence_digest_is_bounded(self):
+        long_body = "x" * 5000
+        def huge(endpoint, **kwargs):
+            if "/readme" in endpoint:
+                import base64
+                return {"content": base64.b64encode(long_body.encode()).decode(), "sha": "r"}
+            return self.evidence_response(endpoint, **kwargs)
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.weak_repos() + self.strong_repos()))
+        with patch.object(ad, "github_get", side_effect=huge):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=4))
+        summary = next(row["evidence_summary"] for row in result["items"]
+                       if row["repo"] == "zzz/lemomo-opuscar")
+        self.assertLessEqual(len(summary["readme"]), ad.EVIDENCE_SUMMARY_LIMIT)
+        self.assertTrue(summary["readme_truncated"])
+
+    def test_unfetched_candidates_are_marked_not_fetched_and_ordered_last(self):
+        # A repository with no evidence at all is labelled honestly and is
+        # placed after the candidates the run actually fetched.
+        ad.atomic_json(self.data / "original_latest.json",
+                       snapshot(self.weak_repos() + self.strong_repos()))
+        with patch.object(ad, "github_get", side_effect=self.evidence_response):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=4, limit=12))
+        rows = result["items"]
+        fetched = [row for row in rows if row["evidence_status"] == "complete"]
+        unfetched = [row for row in rows if row["evidence_status"] == "not_fetched"]
+        self.assertTrue(fetched)
+        for row in unfetched:
+            self.assertEqual(row["evidence_source"], "none")
+            self.assertIsNone(row["evidence_summary"])
+        if unfetched:
+            self.assertGreater(min(row["evidence_rank"] for row in unfetched),
+                               max(row["evidence_rank"] for row in fetched))
+
+    def test_cached_evidence_is_labelled_as_cache_not_as_this_run(self):
+        row = {"id": 5, "full_name": "cached/repo", "description": "subtitle timeline renderer",
+               "starred_at": "2026-10-20T00:00:00Z", "pushed_at": "2026-10-21T00:00:00Z",
+               "topics": ["video"]}
+        cached = {"repo": row["full_name"], "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row), "status": "complete",
+                  "head_sha": "head", "release": {"tag": "v1", "body": "old release body"},
+                  "readme": {"blob_sha": "readme-sha", "text": "cached readme text"},
+                  "commits": [{"sha": "c", "message": "cached commit"}],
+                  "fetched_at": "2026-10-01T00:00:00Z", "changed_at": "2026-10-01T00:00:00Z"}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        rc, result = capture(ad.cmd_auto, self.args(fetch_evidence=False))
+        self.assertEqual(rc, 0)
+        item = result["items"][0]
+        self.assertEqual(item["evidence_status"], "cached")
+        self.assertEqual(item["evidence_source"], "cache")
+        self.assertEqual(item["evidence_summary"]["source"], "cache")
+        self.assertEqual(item["evidence_summary"]["fetched_at"], "2026-10-01T00:00:00Z")
+        self.assertIn("cached readme text", item["evidence_summary"]["readme"])
+
+    def test_per_repo_and_per_project_caps_still_apply_to_fetched_candidates(self):
+        # One repository must not fill the whole round, and one project must
+        # not monopolise it, even when those candidates carry the best
+        # evidence of the run.
+        repos = self.strong_repos()
+        ad.atomic_json(self.data / "original_latest.json", snapshot(repos))
+        with patch.object(ad, "github_get", side_effect=self.evidence_response):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=4, limit=8,
+                                                       per_project=2, per_repo=1))
+        rows = result["items"]
+        per_repo = {}
+        per_project = {}
+        for row in rows:
+            per_repo[row["repo"]] = per_repo.get(row["repo"], 0) + 1
+            per_project[row["project_id"]] = per_project.get(row["project_id"], 0) + 1
+        self.assertTrue(all(count <= 1 for count in per_repo.values()), per_repo)
+        self.assertTrue(all(count <= 2 for count in per_project.values()), per_project)
+        self.assertGreater(len(per_project), 1, "A single project monopolised the round")
+
+    def test_new_release_text_recalls_a_new_component_match(self):
+        # The README and Release text fetched in this run must take part in
+        # this run's recall, so a new capability can surface a component that
+        # the stale metadata did not match at all.
+        row = {"id": 9, "full_name": "newcap/tool", "description": "plain utility repo",
+               "topics": [], "starred_at": "2026-10-20T00:00:00Z",
+               "pushed_at": "2026-10-21T00:00:00Z"}
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        _, before = capture(ad.cmd_auto, self.args(fetch_evidence=False))
+        self.assertEqual(before["items"], [],
+                         "The stale metadata must not match on its own")
+        def response(endpoint, **kwargs):
+            if "/readme" in endpoint:
+                import base64
+                body = base64.b64encode(b"Adds subtitle timeline support").decode()
+                return {"content": body, "sha": "readme-sha"}
+            if "/releases?" in endpoint:
+                return [{"tag_name": "v2", "body": "New: added support for subtitle captions",
+                         "url": "u", "published_at": "2026-10-22T00:00:00Z"}]
+            if "/commits?" in endpoint:
+                return [{"sha": "h", "commit": {"message": "add subtitle support"}}]
+            raise AssertionError(endpoint)
+        with patch.object(ad, "github_get", side_effect=response):
+            _, after = capture(ad.cmd_auto, self.args(evidence_limit=2))
+        self.assertTrue(after["items"], "The new Release/README text did not recall the component")
+        self.assertEqual(after["items"][0]["repo"], "newcap/tool")
+        self.assertEqual(after["items"][0]["evidence_status"], "complete")
+
+    def test_coverage_discloses_fetched_but_not_admitted_repositories(self):
+        # "Not in the candidates" must not read as "nothing changed".
+        repos = self.weak_repos() + self.strong_repos()
+        _, result = self.run_with_evidence(repos, evidence_limit=4, limit=2, per_project=1)
+        disclosure = result["coverage"]["watch_coverage"]["evidence_candidates"]
+        self.assertEqual(disclosure["fetched_this_run"], 4)
+        self.assertGreaterEqual(disclosure["fetched_not_in_candidates"], 1)
+        self.assertEqual(disclosure["fetched_this_run"],
+                         disclosure["fetched_in_candidates"] + disclosure["fetched_not_in_candidates"])
+        self.assertEqual(disclosure["candidates_total"], len(result["items"]))
+        self.assertEqual(disclosure["candidates_with_evidence"]
+                         + disclosure["candidates_without_evidence"], len(result["items"]))
+
+
+
+class EvidenceRankTests(unittest.TestCase):
+    """The evidence tier must reflect what this run knows, not where the
+    digest came from.
+
+    The regression: a run that tried to fetch a repository and failed fell
+    back to the cache, but the rank only rewarded the "this_run" source, so
+    the fallback scored 0 and lost to a plain cache hit of a repository the
+    run had never touched. That inverted the intended priority.
+    """
+
+    def test_failed_attempt_outranks_a_plain_cache_hit(self):
+        fallback = ad.evidence_rank(ad.EVIDENCE_STATUS_CACHED_PARTIAL, "cache")
+        plain_cache = ad.evidence_rank("cached", "cache")
+        self.assertGreater(fallback, plain_cache)
+        self.assertGreater(fallback, ad.EVIDENCE_RANK_NONE)
+
+    def test_budget_skip_outranks_a_plain_cache_hit(self):
+        skipped = ad.evidence_rank(ad.EVIDENCE_STATUS_CACHED_SKIPPED, "cache")
+        self.assertGreater(skipped, ad.evidence_rank("cached", "cache"))
+        self.assertGreater(skipped, ad.EVIDENCE_RANK_NONE)
+
+    def test_stale_cache_is_not_below_a_plain_cache_hit(self):
+        stale = ad.evidence_rank("stale", "cache")
+        plain = ad.evidence_rank("cached", "cache")
+        self.assertGreaterEqual(stale, plain)
+        self.assertGreater(stale, ad.EVIDENCE_RANK_NONE)
+
+    def test_documented_five_tiers_are_monotonic(self):
+        # The documented dimension is five tiers: this-run deep > this-run
+        # cheap > this-run partial > cache hit > no evidence. The cache
+        # fallbacks belong to the "this-run partial" tier, because the run
+        # did try and did not get a complete read.
+        deep = ad.evidence_rank("complete", "this_run")
+        cheap = ad.evidence_rank("complete", "this_run", "cheap")
+        partial = ad.evidence_rank("partial", "this_run")
+        fallback = ad.evidence_rank(ad.EVIDENCE_STATUS_CACHED_PARTIAL, "cache")
+        skipped = ad.evidence_rank(ad.EVIDENCE_STATUS_CACHED_SKIPPED, "cache")
+        cache = ad.evidence_rank("cached", "cache")
+        none = ad.evidence_rank("not_fetched", "none")
+        self.assertGreater(deep, cheap)
+        self.assertGreater(cheap, partial)
+        self.assertGreater(partial, cache)
+        self.assertGreater(cache, none)
+        self.assertEqual(none, ad.EVIDENCE_RANK_NONE)
+        # The fallbacks sit in the partial tier, not below the cache tier.
+        self.assertEqual(fallback, partial)
+        self.assertEqual(skipped, partial)
+        self.assertGreater(fallback, cache)
+        self.assertGreater(skipped, cache)
+
+    def test_the_full_ordering_key_is_strictly_ordered(self):
+        # The queue sorts on (rank, detail). The whole set of real statuses
+        # must come out in a single, non-ambiguous order.
+        states = [
+            ("complete", "this_run", None),
+            ("complete", "this_run", "cheap"),
+            ("partial", "this_run", None),
+            (ad.EVIDENCE_STATUS_CACHED_PARTIAL, "cache", None),
+            (ad.EVIDENCE_STATUS_CACHED_SKIPPED, "cache", None),
+            ("stale", "cache", None),
+            ("cached", "cache", None),
+            ("not_fetched", "none", None),
+        ]
+        keys = [(ad.evidence_rank(s, src, probe),
+                 ad.evidence_detail_rank(s, src)) for s, src, probe in states]
+        self.assertEqual(keys, sorted(keys, reverse=True))
+        self.assertEqual(len(set(keys)), len(keys))
+
+    def test_detail_tier_orders_fresher_evidence_first(self):
+        # Inside the "partial" tier the fresher evidence comes first.
+        self.assertGreater(ad.evidence_detail_rank("partial", "this_run"),
+                           ad.evidence_detail_rank(ad.EVIDENCE_STATUS_CACHED_PARTIAL, "cache"))
+        self.assertGreater(ad.evidence_detail_rank(ad.EVIDENCE_STATUS_CACHED_PARTIAL, "cache"),
+                           ad.evidence_detail_rank(ad.EVIDENCE_STATUS_CACHED_SKIPPED, "cache"))
+        # Inside the cache tier a stale digest outranks a fresh one.
+        self.assertGreater(ad.evidence_detail_rank("stale", "cache"),
+                           ad.evidence_detail_rank("cached", "cache"))
+
+    def test_the_documented_status_table_matches_the_code(self):
+        # The reference documents promise a status list and a rank table.
+        # Both are checked against the code so they cannot drift apart.
+        docs = Path(__file__).resolve().parents[1] / "references" / "daily-opportunities.md"
+        skill = Path(__file__).resolve().parents[1] / "SKILL.md"
+        doc_text = docs.read_text(encoding="utf-8")
+        skill_text = skill.read_text(encoding="utf-8")
+        statuses = ("complete", "partial", "cached_partial", "cached_skipped",
+                    "cached", "stale", "not_fetched")
+        for status in statuses:
+            self.assertIn(f"`{status}`", doc_text,
+                          f"{status} is not documented in daily-opportunities.md")
+            self.assertIn(f"`{status}`", skill_text,
+                          f"{status} is not documented in SKILL.md")
+        # The rank table the reference documents states one number per tier.
+        expected = {"本轮深探测": 4, "本轮廉价探测": 3, "本轮部分失败": 2,
+                    "缓存命中": 1, "无证据": 0}
+        for tier, value in expected.items():
+            self.assertIn(f"| {tier} | {value} |", doc_text,
+                          f"The rank table lost the {tier} tier ({value})")
+
+    def test_the_tier_table_matches_the_documented_one(self):
+        # The exact table the reference documents promise.
+        table = {
+            "complete deep": 4,
+            "complete cheap": 3,
+            "partial this run": 2,
+            "cached_partial": 2,
+            "cached_skipped": 2,
+            "cached": 1,
+            "stale": 1,
+            "not_fetched": 0,
+        }
+        actual = {
+            "complete deep": ad.evidence_rank("complete", "this_run"),
+            "complete cheap": ad.evidence_rank("complete", "this_run", "cheap"),
+            "partial this run": ad.evidence_rank("partial", "this_run"),
+            "cached_partial": ad.evidence_rank(ad.EVIDENCE_STATUS_CACHED_PARTIAL, "cache"),
+            "cached_skipped": ad.evidence_rank(ad.EVIDENCE_STATUS_CACHED_SKIPPED, "cache"),
+            "cached": ad.evidence_rank("cached", "cache"),
+            "stale": ad.evidence_rank("stale", "cache"),
+            "not_fetched": ad.evidence_rank("not_fetched", "none"),
+        }
+        self.assertEqual(actual, table)
+
+    def test_fallback_status_keeps_its_own_tier_and_source(self):
+        fields = ad.candidate_evidence_fields({
+            "_evidence_record": {"readme": {"text": "cached body"},
+                                 "fetched_at": "2026-10-01T00:00:00Z"},
+            "_evidence_source": "cache",
+            "_evidence_status": ad.EVIDENCE_STATUS_CACHED_PARTIAL,
+            "_evidence_fallback_note": "This run's fetch failed."})
+        self.assertEqual(fields["status"], ad.EVIDENCE_STATUS_CACHED_PARTIAL)
+        self.assertEqual(fields["source"], "cache")
+        self.assertEqual(fields["rank"], ad.EVIDENCE_RANK_THIS_RUN_PARTIAL)
+        self.assertIn("failed", fields["summary"]["fallback_note"])
+
+
+class EvidenceFallbackQueueTests(unittest.TestCase):
+    """End-to-end: a repository this run tried must not lose its place to a
+    repository this run never touched, and an old digest must be visibly old.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.skills = self.root / "skills"
+        self.skills.mkdir()
+        self.data = self.root / "data"
+        self.data.mkdir()
+        write_skill(self.skills, "proj0", "视频字幕渲染与时间轴工具")
+
+    def args(self, **overrides):
+        return SimpleNamespace(**dict(dict(project=None, skills_root=[self.skills], repo_root=None,
+            data_dir=self.data, refresh=False, fetch_evidence=True, evidence_limit=4,
+            limit=12, per_project=2, recent_days=14, update_days=7, write=False,
+            show_suppressed=False, focus_limit=8, request_budget=60,
+            cheap_budget=0), **overrides))
+
+    def candidate_repo(self, name, repo_id, description="subtitle timeline renderer"):
+        return {"id": repo_id, "full_name": name, "description": description,
+                "topics": ["video"], "starred_at": "2026-10-20T00:00:00Z",
+                "pushed_at": "2026-10-21T00:00:00Z"}
+
+    def cached_record(self, row, body="cached readme body"):
+        return {"repo": row["full_name"], "repo_id": row["id"],
+                "repo_revision": ad.repo_revision(row), "status": "complete",
+                "head_sha": "head-sha", "release": {"tag": "v1", "body": "old release"},
+                "readme": {"blob_sha": "readme-sha", "text": body},
+                "commits": [{"sha": "c1", "message": "cached commit"}],
+                "fetched_at": "2026-10-01T00:00:00Z",
+                "changed_at": "2026-10-01T00:00:00Z"}
+
+    def test_failed_fetch_is_not_dropped_behind_an_untouched_cache_hit(self):
+        # "own/attempted-failed" was fetched this run and failed, so it falls
+        # back to the cache. "own/untouched" was never touched this run and
+        # only hits the cache. The attempted one must keep the first place.
+        attempted = self.candidate_repo("own/attempted-failed", 11)
+        untouched = self.candidate_repo("own/untouched", 12)
+        ad.atomic_json(ad.evidence_cache(self.data, attempted["full_name"]),
+                       self.cached_record(attempted, "attempted cached body"))
+        ad.atomic_json(ad.evidence_cache(self.data, untouched["full_name"]),
+                       self.cached_record(untouched, "untouched cached body"))
+        ad.atomic_json(self.data / "original_latest.json", snapshot([attempted, untouched]))
+
+        def response(endpoint, **kwargs):
+            raise RuntimeError("network offline")
+
+        with patch.object(ad, "github_get", side_effect=response):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=1, limit=1))
+        items = result["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["repo"], "own/attempted-failed")
+        self.assertEqual(items[0]["evidence_status"], ad.EVIDENCE_STATUS_CACHED_PARTIAL)
+        self.assertEqual(items[0]["evidence_source"], "cache")
+        self.assertEqual(items[0]["evidence_rank"], ad.EVIDENCE_RANK_THIS_RUN_PARTIAL)
+
+    def test_cached_digest_is_visibly_old_not_this_run(self):
+        # The Agent must be able to tell an old digest from a fresh one.
+        row = self.candidate_repo("own/old-cache", 21)
+        cached = self.cached_record(row, "old cached body")
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+
+        def response(endpoint, **kwargs):
+            raise RuntimeError("network offline")
+
+        with patch.object(ad, "github_get", side_effect=response):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=1))
+        item = result["items"][0]
+        self.assertEqual(item["evidence_status"], ad.EVIDENCE_STATUS_CACHED_PARTIAL)
+        self.assertEqual(item["evidence_source"], "cache")
+        self.assertEqual(item["evidence_summary"]["source"], "cache")
+        self.assertEqual(item["evidence_summary"]["fetched_at"], "2026-10-01T00:00:00Z")
+        self.assertIn("fallback_note", item["evidence_summary"])
+        self.assertIn("cache", item["evidence_summary"]["fallback_note"])
+
+    def test_budget_skip_with_cache_is_labelled_as_a_skipped_fallback(self):
+        row = self.candidate_repo("own/skipped", 31)
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]),
+                       self.cached_record(row, "skipped cached body"))
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        with patch.object(ad, "github_get", side_effect=ad.BudgetExceeded("test")):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=1, request_budget=1))
+        item = result["items"][0]
+        self.assertEqual(item["evidence_status"], ad.EVIDENCE_STATUS_CACHED_SKIPPED)
+        self.assertEqual(item["evidence_source"], "cache")
+        self.assertEqual(item["evidence_summary"]["source"], "cache")
+        self.assertEqual(item["evidence_summary"]["fetched_at"], "2026-10-01T00:00:00Z")
+        self.assertIn("fallback_note", item["evidence_summary"])
+
+    def test_not_fetched_means_neither_this_run_nor_the_cache_has_evidence(self):
+        row = self.candidate_repo("own/nothing", 41)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        with patch.object(ad, "github_get", side_effect=ad.BudgetExceeded("test")):
+            _, result = capture(ad.cmd_auto, self.args(evidence_limit=1, request_budget=1))
+        item = result["items"][0]
+        self.assertEqual(item["evidence_status"], "not_fetched")
+        self.assertIsNone(item["evidence_summary"])
+        self.assertEqual(item["evidence_rank"], ad.EVIDENCE_RANK_NONE)
 
 
 if __name__ == "__main__":
