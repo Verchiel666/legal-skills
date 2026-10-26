@@ -348,6 +348,9 @@ def validate_card(card: Dict, base_dir: Optional[Path] = None) -> Tuple[bool, Li
                 _verify_evidence_paths({req: decision[req]}, f"decision",
                                        errors, warnings, base_dir)
 
+    if not isinstance(target, dict):
+        return False, errors, warnings
+
     scope = card.get("scope") or (card.get("target") or {}).get("scope")
     capability_key = (card.get("target") or {}).get("capability_key")
     if scope is None and capability_key:
@@ -358,7 +361,61 @@ def validate_card(card: Dict, base_dir: Optional[Path] = None) -> Tuple[bool, Li
     if scope == "direction" and not (card.get("target") or {}).get("capability_key"):
         errors.append("scope=direction 缺少 target.capability_key")
 
+    if "reuse_assessment" in card and not errors:
+        _verify_reuse_assessment(card, base_dir or Path.cwd(), errors)
+
     return len(errors) == 0, errors, warnings
+
+
+def _verify_reuse_assessment(card: Dict, base_dir: Path, errors: List[str]) -> None:
+    """Optional new contract; legacy cards keep their existing state machine."""
+    from reuse_assessment import MAX_BYTES, sha, validate_report
+    try:
+        ref = card["reuse_assessment"]
+        if not isinstance(ref, dict):
+            raise ValueError("reference must be object")
+        path = _resolve_evidence_path(ref["path"], base_dir)
+        if not path.is_file() or path.stat().st_size > MAX_BYTES:
+            raise ValueError("report missing or exceeds input budget")
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_BYTES + 1)
+        if len(raw) > MAX_BYTES:
+            raise ValueError("report exceeds input budget")
+        if sha(raw) != ref.get("sha256"):
+            raise ValueError("report missing or SHA mismatch")
+        report = json.loads(raw)
+        result = validate_report(report)
+        bound = result["binding"]
+        signal, target = card["signal"], card["target"]
+        actual = {**{k: signal.get(k) for k in
+                     ("repo", "repo_id", "repo_revision", "evidence_revision")},
+                  **{k: target.get(k) for k in
+                     ("project_id", "target_revision", "capability_key", "skill_path", "skill_sha256")},
+                  "candidate_key": card.get("candidate_key")}
+        if actual != bound:
+            raise ValueError("card candidate/component/revision binding mismatch")
+        proposals = [p for p in result["proposals"] if p["id"] == ref.get("proposal_id")]
+        if len(proposals) != 1:
+            raise ValueError("unknown proposal_id")
+        proposal = proposals[0]
+        if card.get("reuse_category") != proposal["category"]:
+            raise ValueError("card category differs from recomputed proposal")
+        if proposal["category"] == "not_applicable" and card["gap"] != "不适用":
+            raise ValueError("not_applicable requires gap=不适用")
+        if proposal["category"] not in {"not_applicable", "needs_evidence"} and card["gap"] == "不适用":
+            raise ValueError("positive proposal incompatible with gap=不适用")
+        status = card["decision"]["status"]
+        if proposal["category"] == "needs_evidence":
+            allowed = {"deferred"}
+        elif proposal["category"] == "not_applicable":
+            allowed = {"rejected", "researched", "deferred"}
+        else:
+            # tested/adopted still require the existing real evidence checks.
+            allowed = {"researched", "experiment_proposed", "tested", "adopted", "deferred"}
+        if status not in allowed:
+            raise ValueError("card decision incompatible with assessment")
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError) as exc:
+        errors.append(f"reuse_assessment: {exc}")
 
 
 def atomic_json(path: Path, value) -> None:
@@ -466,7 +523,18 @@ def cmd_record(args) -> int:
         warnings.append(f"该候选此前被拒绝过 {len(rejected_before)} 次；"
                         f"请确认本次携带了新的实质证据（repo revision / 目标需求变化）")
 
+    if "reuse_assessment" in card:
+        # Preserve the already-validated report identity when the card moves.
+        card["reuse_assessment"]["path"] = str(_resolve_evidence_path(
+            card["reuse_assessment"]["path"], Path(args.input).resolve().parent))
     path = save_card(card)
+    if "reuse_assessment" in card:
+        saved = load_card(str(path))
+        ok, errors, saved_warnings = validate_card(saved, base_dir=path.parent)
+        if not ok:
+            print(json.dumps({"recorded": False, "path": str(path), "errors": errors,
+                              "warnings": warnings + saved_warnings}, ensure_ascii=False, indent=2))
+            return 1
     print(json.dumps({
         "recorded": True,
         "path": str(path),

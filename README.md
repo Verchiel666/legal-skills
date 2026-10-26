@@ -36,6 +36,7 @@
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-10-26 | 新上传 | [skill-publicizer](skills/skill-publicizer/) | v1.0.0 | 个人 Skill 公开化流程：通用机制与私有配置拆分、真实导出树门禁、独立复审及分阶段发表授权。 |
 | 2026-10-26 | 新上传 | [magpie-optimizer](skills/magpie-optimizer/) | v1.6.0 | 从私有维护仓库迁入公开目录：保留体检/盘点/入门/路由治理与离线回归；本机画像、策略与运行证据通过 `config/*.local.*`、`state/` 私有层隔离。 |
+| 2026-10-26 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.17.0 | 新增离线动态复用审查：每日候选直接绑定目标原文与三修订，核来源摘录、方法转移和生产能力提案义务；缺据暂缓，报告保存后可回读且消费时重验；廉价探测区分缓存与本轮观察，同方向多锚点只占一席。 |
 | 2026-10-26 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.16.0 | 修复每日候选队列积压饥饿：每轮为最久未展示 pending 保留固定名额（`--backlog-reserve`，默认 2），本轮取证候选保持证据通道内第一优先级但不再占满整轮；coverage 与回执披露候选来源与按真实轮次估算的积压覆盖周期。 |
 | 2026-10-26 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.15.2 | 回执校验准备包结构，缺失候选列表不再误判静默；准备错误保留为失败事实，格式异常受控降级；保留合法 partial 与旧包时间回退。 |
 | 2026-10-25 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.15.1 | 修复证据排序反转：本轮取证失败或预算跳过回退缓存的候选不再被从未尝试过的缓存命中挤掉（回退分支记 `cached_partial` / `cached_skipped`，排序按 status 而非 source）；范围冲突三值在 repository-profiles 补齐。 |
@@ -745,9 +746,9 @@
 <td>工具·Star管理</td>
 <td style="word-break:break-word">GitHub Star 项目管理工具，从内容自动发现并 Star 项目，同步追踪已 Star 项目更新，生成可视化 Dashboard，支持分类管理和标签系统</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v0.16.0</td>
+<td style="text-align:center">v0.17.0</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/github-star-manager-0.6.6.zip">下载 v0.6.6</a></td>
-<td>源码 v0.16.0 待发布；下载为已发布 v0.6.6。</td>
+<td>源码 v0.17.0 待发布；下载为已发布 v0.6.6。</td>
 </tr>
 <tr>
 <td><a href="skills/skill-publicizer/"><strong>skill-publicizer</strong></a></td>
