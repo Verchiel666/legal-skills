@@ -99,9 +99,9 @@ def role_task(assignment):
         "可正常阅读和用于本方论证；不臆造未提供的材料或对方主张。",
         "3. 只依据 documents 与 history 推理；history 是已入卷的公开发言，不是本轮答案。",
         "4. 分开陈述已提供的事实、你的主张与假设；证据不足时直接说明不足。",
-        "5. 正文可以引用你本轮可见的任何材料编号（含本方私有材料），但须标明其为本方私有准备；"
-        "提交字段 citations 由书记员机械校验，只接受 documents 中 visible_to 为 [all] 的编号，"
-        "填入本方私有编号会被拒绝入卷。",
+        "5. 正文只能引用 documents 中 visible_to 为 [all] 的公开材料编号；本方私有材料在"
+        "正式入卷质证前，只能说明其存在与拟证明对象，不得披露具体数量、结论或编号。",
+        "5a. 提交字段 citations 由书记员机械校验，只接受公开材料编号；填入本方私有编号会被拒绝入卷。",
         "5b. 他方私有材料未出现在本文件，不得引用、复述或推测其内容。",
         "6. 严格按 submission_template 的字段提交；除 body 外不要新增或删除字段，"
         "schema_version、run_id、turn_id、role、material_version、read_through、responds_to 原样保留。",

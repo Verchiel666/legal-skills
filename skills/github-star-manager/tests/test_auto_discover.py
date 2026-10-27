@@ -1149,6 +1149,137 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(invalid.returncode, 2)
 
 
+    def test_deep_then_cheap_keeps_cache_but_not_current_observations(self):
+        row = repo()
+        head = "a" * 40
+        cached = {"status": "complete", "head_sha": head, "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row), "release": None,
+                  "observed": {"head": True, "release": True, "readme": True},
+                  "readme": {"blob_sha": "r1", "text": "stable readme"}}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        library = self.directory / "reference-library"
+        (library / "sources/sample--subtitle").mkdir(parents=True)
+        (library / "manifests").mkdir()
+        ad.atomic_json(library / "manifests/sample--subtitle.json",
+                       {"repo": row["full_name"], "commit": head})
+        with patch.object(ad, "github_get", return_value=[]) as get:
+            _, result = capture(ad.cmd_auto, self.args(fetch_evidence=True,
+                evidence_limit=0, cheap_budget=1, request_budget=1))
+        self.assertEqual(get.call_count, 1)
+        item = result["items"][0]
+        self.assertIsNone(item["upstream_change"]["changed"]["head_changed"])
+        self.assertIsNone(item["upstream_change"]["changed"]["readme_changed"])
+        self.assertFalse(item["upstream_change"]["changed"]["release_changed"])
+        self.assertIsNone(item["source_comparison"])
+        stored = ad.read_json(ad.evidence_cache(self.data, row["full_name"]))
+        self.assertEqual(stored["head_sha"], head)
+        self.assertEqual(stored["readme"]["blob_sha"], "r1")
+        self.assertFalse(stored["observed"]["head"])
+        self.assertTrue(stored["cache_available"]["head"])
+        # A subsequent deep observation can still compare to the retained baseline.
+        self.assertTrue(ad.compare_observed({**cached, "head_sha": "b" * 40}, stored,
+                                           cached["observed"])["head_changed"])
+
+    def test_partial_deep_does_not_present_retained_head_as_current(self):
+        row = repo()
+        head = "a" * 40
+        cached = {"status": "complete", "head_sha": head, "repo_id": row["id"],
+                  "repo_revision": ad.repo_revision(row), "release": None,
+                  "readme": {"blob_sha": "r1", "text": "stable readme"}}
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), cached)
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        library = self.directory / "reference-library"
+        (library / "sources/sample--subtitle").mkdir(parents=True)
+        (library / "manifests").mkdir()
+        ad.atomic_json(library / "manifests/sample--subtitle.json",
+                       {"repo": row["full_name"], "commit": head})
+        def github(endpoint, **kwargs):
+            if "/readme" in endpoint:
+                raise RuntimeError("synthetic README failure")
+            if "/commits?" in endpoint:
+                return [{"sha": "b" * 40, "commit": {"message": "new"}}]
+            return []
+        with patch.object(ad, "github_get", side_effect=github):
+            _, result = capture(ad.cmd_auto, self.args(fetch_evidence=True))
+        item = result["items"][0]
+        self.assertIsNone(item["source_comparison"])
+        self.assertIsNone(item["local_snapshots"][0]["upstream_head"])
+        self.assertEqual(ad.read_json(ad.evidence_cache(self.data, row["full_name"]))["head_sha"], head)
+
+    def test_same_capability_hints_share_one_budget_and_queue_slot(self):
+        row = repo()
+        row["_capability_hints"] = pc.capability_hints(
+            "Features: subtitle support", {"tag": "v1", "body": "Added subtitle support"},
+            readme_blob_sha="r1")
+        rows, _, count = ad.prepare(snapshot([row]), self.profiles(), {}, NOW,
+                                    limit=2, per_project=2)
+        self.assertEqual(count, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual({r["source"] for r in rows[0]["capability"]["evidence"]},
+                         {"release", "readme"})
+        queue = ad.update_review_queue(self.data, {}, rows, rows, snapshot([row]), {}, NOW)
+        self.assertEqual(queue["entries"][rows[0]["candidate_key"]]["shown_count"], 1)
+
+    def test_duplicate_capability_does_not_displace_another_direction(self):
+        (self.directory / "SKILL.md").write_text(
+            "---\nname: sample-video\ndescription: 视频字幕与转场\n---\n# Demo\n")
+        row = repo()
+        row["_capability_hints"] = pc.capability_hints(
+            "Features: subtitle support", {"tag": "v1", "body":
+             "Added subtitle support\nAdded transition support"}, readme_blob_sha="r1")
+        rows, _, count = ad.prepare(snapshot([row]), self.profiles(), {}, NOW,
+                                    limit=2, per_project=2)
+        self.assertEqual(count, 2)
+        self.assertEqual({r["capability"]["key"] for r in rows}, {"subtitle", "transition"})
+        self.assertEqual(len(rows), 2)
+        # Even a caller handing repeated selected rows to the persistence layer
+        # cannot inflate a decision's shown_count within the same round.
+        queue = ad.update_review_queue(self.data, {}, rows + rows, rows,
+                                       snapshot([row]), {}, NOW)
+        self.assertEqual({e["shown_count"] for e in queue["entries"].values()}, {1})
+
+    def test_cache_only_snapshot_comparison_is_unknown(self):
+        row = repo()
+        head = "a" * 40
+        ad.atomic_json(ad.evidence_cache(self.data, row["full_name"]), {
+            "status": "complete", "head_sha": head, "repo_id": row["id"],
+            "repo_revision": ad.repo_revision(row), "release": None,
+            "readme": {"blob_sha": "r1", "text": "stable readme"}})
+        ad.atomic_json(self.data / "original_latest.json", snapshot([row]))
+        library = self.directory / "reference-library"
+        (library / "sources/sample--subtitle").mkdir(parents=True)
+        (library / "manifests").mkdir()
+        ad.atomic_json(library / "manifests/sample--subtitle.json", {"repo": row["full_name"], "commit": head})
+        with patch.object(ad, "github_get", side_effect=AssertionError("offline")):
+            _, result = capture(ad.cmd_auto, self.args())
+        item = result["items"][0]
+        self.assertIsNone(item["source_comparison"])
+        self.assertIsNone(item["upstream_change"]["observation_comparison"])
+        self.assertIsNone(item["local_snapshots"][0]["upstream_head"])
+        self.assertEqual(item["local_snapshots"][0]["upstream_commit_comparison"], "unknown")
+
+    def test_duplicate_identity_unique_in_all_selection_modes(self):
+        (self.directory / "SKILL.md").write_text("---\nname: sample-video\ndescription: 视频字幕与转场\n---\n# Demo\n")
+        row = repo()
+        row["_capability_hints"] = pc.capability_hints("Features: subtitle support", {
+            "tag": "v1", "body": "Added subtitle support\nAdded transition support"}, readme_blob_sha="r1")
+        for mode, limit, reserve in (("default", 2, 2), ("reserve0", 2, 0), ("unlimited", None, 2)):
+            with self.subTest(mode=mode):
+                rows, _, count = ad.prepare(snapshot([row]), self.profiles(), {}, NOW,
+                    limit=limit, per_project=2, backlog_reserve=reserve)
+                self.assertEqual(count, 2)
+                self.assertEqual({r["capability"]["key"] for r in rows}, {"subtitle", "transition"})
+                self.assertEqual(len(rows), 2)
+                subtitle = next(r for r in rows if r["capability"]["key"] == "subtitle")
+                self.assertEqual({e["source"] for e in subtitle["capability"]["evidence"]}, {"release", "readme"})
+                # Exercise the selection boundary independently from prepare.
+                selected = ad.select_candidates(rows + rows, limit, 2, backlog_reserve=reserve)
+                self.assertEqual(len(selected), 2)
+                queue = ad.update_review_queue(self.data, {}, selected + selected, rows, snapshot([row]), {}, NOW)
+                self.assertEqual({e["shown_count"] for e in queue["entries"].values()}, {1})
+
+
 class CandidateEvidenceTests(unittest.TestCase):
     """The candidate queue must carry the evidence the run already paid for.
 
@@ -1590,6 +1721,280 @@ class EvidenceFallbackQueueTests(unittest.TestCase):
         self.assertEqual(item["evidence_status"], "not_fetched")
         self.assertIsNone(item["evidence_summary"])
         self.assertEqual(item["evidence_rank"], ad.EVIDENCE_RANK_NONE)
+
+
+class QueueFairnessTests(unittest.TestCase):
+    """Cross-round fairness: the evidence channel must not starve the backlog.
+
+    The real defect: with a large pending backlog, every round filled its
+    slots with candidates whose repository was fetched this run
+    (``evidence_rank`` high), so the historical pending candidates never
+    became visible. These tests pin the anti-starvation guarantee across
+    real consecutive rounds.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.skills = self.root / "skills"
+        self.skills.mkdir()
+        self.data = self.root / "data"
+        self.data.mkdir()
+        for index in range(3):
+            write_skill(self.skills, f"proj{index}", "视频字幕渲染与时间轴工具")
+
+    def args(self, **overrides):
+        return SimpleNamespace(**dict(dict(project=None, skills_root=[self.skills], repo_root=None,
+            data_dir=self.data, refresh=False, fetch_evidence=True, evidence_limit=4,
+            limit=12, per_project=2, recent_days=14, update_days=7, write=False,
+            show_suppressed=False, focus_limit=8, request_budget=60,
+            cheap_budget=0, backlog_reserve=ad.DEFAULT_BACKLOG_RESERVE), **overrides))
+
+    def candidate_repo(self, name, repo_id, description="subtitle timeline renderer"):
+        return {"id": repo_id, "full_name": name, "description": description,
+                "topics": ["video"], "starred_at": "2026-10-20T00:00:00Z",
+                "pushed_at": "2026-10-21T00:00:00Z"}
+
+    def repos(self, count=6):
+        return [self.candidate_repo(f"own/repo{index:02d}", 500 + index)
+                for index in range(count)]
+
+    def evidence_response(self, endpoint, **kwargs):
+        if "/readme" in endpoint:
+            import base64
+            return {"content": base64.b64encode(b"README subtitle timeline render").decode(),
+                    "sha": "readme-sha"}
+        if "/releases?" in endpoint:
+            # A release body without capability wording: a capability hint
+            # would give the candidate a direction key, and the candidate key
+            # would then differ between the round it was first seen and the
+            # round it is judged - a different defect, not the one under test.
+            return [{"tag_name": "v2", "body": "",
+                     "url": "https://example.test/v2", "published_at": "2026-10-22T00:00:00Z"}]
+        if "/commits?" in endpoint:
+            return [{"sha": "head-sha", "commit": {"message": "update"}}]
+        raise AssertionError(endpoint)
+
+    def pool(self):
+        """The candidate pool the preparation step derives for these repos."""
+        profiles, _ = ad.discover([self.skills], None)
+        rows, _, _ = ad.prepare(snapshot(self.repos()), profiles, {}, NOW)
+        return rows
+
+    def seed_backlog(self, ages=None):
+        """Write a review queue that already holds a pending backlog.
+
+        The entries use the candidate keys the preparation step derives, so the
+        queue and the candidate pool really refer to the same candidates. This
+        is the real state: a queue that has been accumulating pending items
+        since earlier rounds.
+        """
+        ages = ages or {}
+        entries = {}
+        for candidate in self.pool():
+            key = candidate["candidate_key"]
+            entries[key] = {"candidate_key": key, "project_id": candidate["project_id"],
+                            "repo_id": candidate.get("repo_id"), "repo": candidate["repo"],
+                            "capability_key": candidate["capability"]["key"],
+                            "scope": candidate["decision_scope"], "state": "pending",
+                            "first_seen_at": ages.get(key, "2026-10-01T00:00:00+00:00"),
+                            "last_shown_at": None, "shown_count": 0}
+        ad.atomic_json(self.data / ad.QUEUE_FILE,
+                       {"schema_version": ad.QUEUE_SCHEMA, "entries": entries,
+                        "cursor": {"round_seq": 3, "last_round_at": "2026-10-20T00:00:00+00:00"}})
+        return entries
+
+    def run_round(self, day, **overrides):
+        """Run one real round with --write, at a fixed clock."""
+        clock = patch.object(ad, "now_utc", return_value=NOW + timedelta(days=day))
+        network = patch.object(ad, "github_get", side_effect=self.evidence_response)
+        with clock, network:
+            return capture(ad.cmd_auto, self.args(write=True, **overrides))
+
+    def test_backlog_candidates_appear_while_this_run_evidence_keeps_filling_the_round(self):
+        # The starvation scenario. Every round fetches repositories and those
+        # candidates always rank first, so without a reserved share the
+        # historical pending candidates would never become visible.
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        self.seed_backlog()
+        seen_pending = set()
+        for day in range(1, 6):
+            _, result = self.run_round(day, limit=3, per_project=1, evidence_limit=3)
+            self.assertTrue(result["items"], f"round {day} produced no candidates")
+            for row in result["items"]:
+                if row.get("admission_source") == "backlog":
+                    seen_pending.add(row["repo"])
+        self.assertTrue(seen_pending,
+                        "no backlog candidate reached the Agent in five rounds")
+        # The this-run evidence kept its own slots in the same rounds.
+        _, result = self.run_round(6, limit=3, per_project=1, evidence_limit=3)
+        sources = [row.get("admission_source") for row in result["items"]]
+        self.assertIn("evidence", sources,
+                        sources)
+
+    def test_oldest_pending_is_served_before_a_newer_pending(self):
+        # The reserved slots follow the waiting time, not the project order.
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        rows = self.pool()
+        # One candidate has been waiting much longer than the others.
+        oldest = min(rows, key=lambda c: c["repo"])
+        ages = {oldest["candidate_key"]: "2026-08-01T00:00:00+00:00"}
+        self.seed_backlog(ages)
+        _, result = self.run_round(1, limit=3, per_project=1, evidence_limit=3)
+        backlog_rows = [row for row in result["items"]
+                        if row.get("admission_source") == "backlog"]
+        self.assertTrue(backlog_rows)
+        self.assertEqual(backlog_rows[0]["repo"], oldest["repo"])
+
+    def test_reserve_of_zero_restores_the_previous_ordering(self):
+        # An operator can turn the reserve off; the old evidence-first
+        # behaviour comes back exactly.
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        self.seed_backlog()
+        _, result = self.run_round(1, limit=3, per_project=1, evidence_limit=3,
+                                   backlog_reserve=0)
+        sources = [row.get("admission_source") for row in result["items"]]
+        self.assertNotIn("backlog", sources)
+        # And the evidence channel really got the slots.
+        self.assertTrue(result["items"])
+        self.assertTrue(all(row["evidence_rank"] > 0 for row in result["items"]),
+                        [row["evidence_rank"] for row in result["items"]])
+
+    def test_zero_reserve_labels_non_evidence_candidates_honestly(self):
+        # Legacy mode does not create an evidence-only pool. A candidate with
+        # no evidence must be labelled "other"; "evidence" means membership in
+        # the evidence pool, not merely "selected while the reserve is off".
+        repos = self.repos(6)
+        # The first repository is fetched; the other five only provide recall
+        # candidates and carry no evidence.
+        repos[0]["description"] = "subtitle timeline renderer with unique alpha"
+        repos[1]["description"] = "subtitle timeline renderer with unique beta"
+        repos[2]["description"] = "subtitle timeline renderer with unique gamma"
+        repos[3]["description"] = "subtitle timeline renderer with unique delta"
+        repos[4]["description"] = "subtitle timeline renderer with unique epsilon"
+        repos[5]["description"] = "subtitle timeline renderer with unique zeta"
+        ad.atomic_json(self.data / "original_latest.json", snapshot(repos))
+        _, result = self.run_round(1, limit=6, per_project=2, evidence_limit=1,
+                                   backlog_reserve=0)
+        quota = result["coverage"]["review_queue"]["quota"]
+        rows = {(row["project_id"], row["repo"]): row for row in result["items"]}
+        self.assertTrue(rows)
+        self.assertIn("other", quota["sources_by_count"])
+        self.assertEqual(quota["with_evidence"],
+                         sum(row.get("evidence_rank", 0) > 0 for row in rows.values()))
+        for row in rows.values():
+            expected = "evidence" if row.get("evidence_rank", 0) > 0 else "other"
+            self.assertEqual(row["admission_source"], expected)
+
+    def test_reserved_slots_fall_back_to_evidence_when_the_backlog_is_empty(self):
+        # A fresh state directory has no backlog. The reserved slots must not
+        # waste capacity - the whole round goes to the evidence channel.
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        _, result = self.run_round(1, limit=3, per_project=1, evidence_limit=3)
+        quota = result["coverage"]["review_queue"]["quota"]
+        self.assertEqual(quota["backlog_reserved_slots"], 0)
+        self.assertEqual(quota["sources_by_count"].get("evidence", 0), len(result["items"]))
+
+    def test_per_repo_and_per_project_caps_still_apply_to_the_backlog_channel(self):
+        # The reserved slots obey the same caps as the evidence channel: a
+        # single repository and a single project cannot take the whole round.
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        self.seed_backlog()
+        for day in range(1, 4):
+            _, result = self.run_round(day, limit=6, per_project=1, per_repo=1,
+                                       evidence_limit=3)
+            items = result["items"]
+            self.assertEqual(len({row["repo"] for row in items}), len(items))
+            for row in items:
+                same_repo = [other for other in items if other["repo"] == row["repo"]]
+                self.assertLessEqual(len(same_repo), 1)
+                same_project = [other for other in items
+                                if other["project_id"] == row["project_id"]]
+                self.assertLessEqual(len(same_project), 1)
+
+    def test_a_written_feedback_card_suppresses_and_advances_the_next_candidate(self):
+        # One round of feedback pushes the queue forward: the judged candidate
+        # leaves the backlog and no longer takes a reserved slot.
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        self.seed_backlog()
+        _, first = self.run_round(1, limit=3, per_project=1, evidence_limit=3)
+        backlog_rows = [row for row in first["items"]
+                        if row.get("admission_source") == "backlog"]
+        self.assertTrue(backlog_rows, "no backlog candidate in the first round")
+        judged = backlog_rows[0]
+        # The card scope must match the candidate's own decision scope: a
+        # candidate without a capability direction is judged repository-wide.
+        ad.atomic_json(self.data / "feedback" / "decision.json", {
+            "scope": judged["decision_scope"],
+            "target": {"project_id": judged["project_id"],
+                       "target_revision": judged["target_revision"],
+                       "capability_key": judged["capability"]["key"]},
+            "signal": {"repo": judged["repo"], "repo_id": judged.get("repo_id"),
+                       "repo_revision": judged["repo_revision"],
+                       "evidence_revision": judged.get("evidence_revision")},
+            "decision": {"status": "rejected", "reason": "no local gap"},
+            "_recorded_at": (NOW + timedelta(days=1)).isoformat(),
+            "_schema": "opportunity-card/1.1"})
+        _, second = self.run_round(2, limit=3, per_project=1, evidence_limit=3)
+        self.assertNotIn(judged["repo"], [row["repo"] for row in second["items"]])
+        queue = ad.read_json(self.data / ad.QUEUE_FILE)
+        entry = queue["entries"].get(judged["candidate_key"])
+        self.assertEqual(entry["state"], "judged")
+
+    def test_coverage_discloses_the_quota_sources_and_the_coverage_cycle(self):
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        self.seed_backlog()
+        _, result = self.run_round(1, limit=3, per_project=1, evidence_limit=3)
+        coverage = result["coverage"]["review_queue"]
+        quota = coverage["quota"]
+        self.assertEqual(quota["backlog_reserve"], ad.DEFAULT_BACKLOG_RESERVE)
+        self.assertIn("sources_by_count", quota)
+        self.assertTrue(quota["sources_by_count"])
+        self.assertLessEqual(quota["backlog_reserved_slots"],
+                             quota["sources_by_count"].get("backlog", 0))
+        self.assertIn("with_evidence", quota)
+        self.assertLessEqual(quota["with_evidence"], len(result["items"]))
+        cycle = coverage["coverage_cycle"]
+        self.assertIn("estimated_rounds_to_cover", cycle)
+        self.assertIn("estimated_days_to_cover", cycle)
+        # The disclosure must not claim that uncovered repositories have no
+        # opportunity.
+        self.assertIn("未覆盖", cycle["note"] + cycle["scope"])
+        self.assertIn("没有机会", cycle["note"] + cycle["scope"])
+
+    def test_unlimited_report_still_discloses_evidence_membership(self):
+        rows = self.pool()
+        report = {}
+        selected = ad.select_candidates(rows, limit=None, per_project=2,
+                                        backlog_reserve=2, report=report)
+        self.assertEqual(len(selected), len(rows))
+        self.assertEqual(report["with_evidence"],
+                         sum(row.get("evidence_rank", 0) > 0 for row in selected))
+        self.assertEqual(report["evidence_pool_size"], report["with_evidence"])
+
+    def test_malformed_history_does_not_block_a_new_preparation(self):
+        ad.atomic_json(self.data / "original_latest.json", snapshot(self.repos()))
+        history = self.data / "auto-opportunities" / "runs"
+        history.mkdir(parents=True)
+        bad_values = [["bad"], "bad", 7, None, {"generated_at": ["bad"]},
+                      {"generated_at": {"bad": True}}]
+        for index, value in enumerate(bad_values):
+            (history / f"broken-{index}.json").write_text(json.dumps(value))
+        _, result = self.run_round(1, limit=3, per_project=1, evidence_limit=3)
+        self.assertTrue(result["items"])
+        self.assertIsNone(result["coverage"]["review_queue"]["coverage_cycle"]
+                          ["observed_rounds_per_day"])
+        self.assertTrue(Path(result["run_path"]).exists())
+
+    def test_frequency_skips_invalid_history_and_preserves_valid_rounds(self):
+        history = self.data / "auto-opportunities" / "runs"
+        history.mkdir(parents=True)
+        (history / "a.json").write_text(json.dumps({"generated_at": NOW.isoformat()}))
+        (history / "b.json").write_text(json.dumps(["bad"]))
+        (history / "c.json").write_text(json.dumps({
+            "generated_at": (NOW + timedelta(days=1)).isoformat()}))
+        self.assertEqual(ad.observed_rounds_per_day(self.data), 1.0)
 
 
 if __name__ == "__main__":

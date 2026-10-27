@@ -34,22 +34,15 @@
 
 | 日期       | 类型   | Skill                                                                 | 版本    | 更新要点                                                                                                                                                                                                                                       |
 | :--------- | :----- | :-------------------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-27 | 更新 | [moot-court](skills/moot-court/) | v1.2.6 | 完整材料快照预检与脱敏报告，修复公开引文误拦；新增不带评测答案的 Runtime 候选准备与真实日志覆盖回执。完整跨 Runtime 闭环仍待实测验收。 |
+| 2026-10-27 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.17.1 | 修复畸形枚举反馈中断整轮索引：先验类型、保留无效报告的重评标记与合法旧卡。 |
+| 2026-10-26 | 新上传 | [skill-publicizer](skills/skill-publicizer/) | v1.0.0 | 个人 Skill 公开化流程：通用机制与私有配置拆分、真实导出树门禁、独立复审及分阶段发表授权。 |
+| 2026-10-26 | 新上传 | [magpie-optimizer](skills/magpie-optimizer/) | v1.6.0 | 从私有维护仓库迁入公开目录：保留体检/盘点/入门/路由治理与离线回归；本机画像、策略与运行证据通过 `config/*.local.*`、`state/` 私有层隔离。 |
+| 2026-10-26 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.17.0 | 新增离线动态复用审查：每日候选直接绑定目标原文与三修订，核来源摘录、方法转移和生产能力提案义务；缺据暂缓，报告保存后可回读且消费时重验；廉价探测区分缓存与本轮观察，同方向多锚点只占一席。 |
+| 2026-10-26 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.16.0 | 修复每日候选队列积压饥饿：每轮为最久未展示 pending 保留固定名额（`--backlog-reserve`，默认 2），本轮取证候选保持证据通道内第一优先级但不再占满整轮；coverage 与回执披露候选来源与按真实轮次估算的积压覆盖周期。 |
+| 2026-10-26 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.15.2 | 回执校验准备包结构，缺失候选列表不再误判静默；准备错误保留为失败事实，格式异常受控降级；保留合法 partial 与旧包时间回退。 |
 | 2026-10-25 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.15.1 | 修复证据排序反转：本轮取证失败或预算跳过回退缓存的候选不再被从未尝试过的缓存命中挤掉（回退分支记 `cached_partial` / `cached_skipped`，排序按 status 而非 source）；范围冲突三值在 repository-profiles 补齐。 |
 | 2026-10-25 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.15.0 | 候选携带本轮证据（README/Release/提交摘要），本轮已取证仓库优先进入候选并披露因队列上限未入候选的取证数；范围冲突改按组件真实声明的排除短句判定，无可解析排除句时显式标注待人工确认。 |
-| 2026-10-25 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.14.2 | 修复运行包不可读时的零警告静默成功：新鲜度判定前置到可读性检查之前（用文件 mtime），损坏或格式异常的运行包按“没有有效运行包”处理（显式警告、不得 silent、无证据判 failed），本轮边界回退到 mtime 避免新增未研判条目漏计；同时对齐 CHANGELOG 的 run_id 表述。 |
-| 2026-10-25 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.14.1 | 修复每日闭环回执与租约：`--outcome auto` 可用、显式 judged 须有正向证据、运行包新鲜度校验（默认 24 小时）、租约隔离失败不销毁原文、同 owner 续租保留 run_id。 |
-| 2026-10-24 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.14.0 | 新增每日闭环：离线对账 reconcile、judged/silent/failed 运行回执与并发租约 lease，全程离线且静默需正向证据。 |
-| 2026-10-24 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.13.2 | 新增单轮 GitHub GET 硬预算与廉价 Release 探测档，按请求计价披露用量与耗尽状态，支撑大收藏量的可核算覆盖周期。 |
-| 2026-10-24 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.13.1 | 动态目标画像有界读取实现摘要，补足仅在脚本中出现的真实能力；排除条款按概念从正向召回剔除，降低同词误配。 |
-| 2026-10-24 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.13.0 | 机会细化到组件、repo_id 与能力方向；新增持久公平研判队列和积压披露，收藏元数据变化与本地已用来源优先轮巡，旧反馈整仓兼容。 |
-| 2026-10-23 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.12.0 | 普通收藏与 focus 共用有界轮巡，按具体本地组件发现机会；区分观察增量与固定快照差距，报告取证覆盖并沿反馈去重。 |
-| 2026-10-23 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.11.0 | 新增重点项目 API 画像、focus 登记与固定 commit 的有界稀疏源码包，可判断上游 Skill/运行时对本地套件的复用路径；默认不克隆或执行上游代码。 |
-| 2026-10-22 | 更新 | [github-star-manager](skills/github-star-manager/) | v0.10.0 | 动态发现本地套件目标，显式刷新收藏并取 README/Release/提交证据，按目标与上游修订抑制重复反馈，支持每日 Agent 研判。 |
-| 2026-10-22 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.1.1 | 补齐 PM 总管 PR 合并与本地/云端一致性治理：候选门禁、base 前移证据、内容绑定隐私例外、在途材料保护和中断恢复；Git 操作沿用 git-workflow。 |
-| 2026-10-21 | 新上传 | [disk-insight](skills/disk-insight/) | v1.1.0 | 默认自动发现 Fathom 历史并输出 APFS 容量变化；无历史才定向扫描，明确区分目录累计与真实物理占用。源码待发布。 |
-| 2026-10-21 | 更新 | [multi-agent-orca](skills/multi-agent-orca/) | v3.1.0 | 新增 Codex App cross-thread coordination 参考入口（独立 thread 之间的跨会话协调）、全局配置文件共享写入纪律（单写者/快照/写后逐项回读）、重复任务证据门槛（DUPLICATE_CONFIRMED / SAME_TOPIC_UNCONFIRMED）；跨会话发送侧经一次性 scratch 会话端到端验证。 |
-| 2026-10-21 | 更新 | [dsh-plugin-dev](skills/dsh-plugin-dev/) | v0.6.5 | locale 嵌套展开、重复键和浅覆盖冲突转 NOT_VERIFIED；保留不相交顶层展开，完整自测 47 项。源码待发布。 |
-| 2026-10-21 | 更新 | [git-workflow](skills/git-workflow/) | v1.24.2 | 补充仓库自带 `.githooks/` 的手动启用说明：`core.hooksPath` 相对路径按 worktree 根解析，稀疏检出未落盘时 Git 静默跳过。 |
 
 </details>
 
@@ -98,13 +91,13 @@
 | [诉讼案件前期研判](expert-suites/litigation-assessment/) | 新案建档、事实证据分析、法律检索、策略和客户交付 | 9 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-litigation-assessment-0.1.0.zip) |
 | [诉讼文书与案件推进](expert-suites/litigation-documents-operations/) | 起诉文书、裁判分析、上诉再审和案件沟通 | 9 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-litigation-documents-operations-0.1.0.zip) |
 | [Skill 开发与质量保障](expert-suites/skill-development-quality/) | 项目初始化、Harness、质量审查、验证和 Agent 协作 | 8 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-development-quality-0.1.0.zip) |
-| [Skill 发布与分发](expert-suites/skill-release-distribution/) | Git、版本、Release、多渠道同步和用户安装 | 8 | v0.1.1 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-release-distribution-0.1.0.zip) |
+| [Skill 发布与分发](expert-suites/skill-release-distribution/) | Git、版本、Release、多渠道同步和用户安装 | 9 | v0.1.3 | [已发布 v0.1.0](https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/suite-skill-release-distribution-0.1.0.zip) |
 | [合同审查与小微企业顾问](expert-suites/contract-business-counsel/) | 合同起草审查、OPC / 小微企业经营分诊和顾问交付 | 6 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-contract-business-counsel-0.1.0.zip) |
 | [法律研究与客户洞察](expert-suites/legal-research-client-insight/) | 客户增量简报、月季行业研究、来源核验与文本规范 | 5 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-legal-research-client-insight-0.1.0.zip) |
 | [知识产权实务](expert-suites/intellectual-property-practice/) | 专利下载及初步分析、商标申请辅助；双入口分流 | 5 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-intellectual-property-practice-0.1.0.zip) |
 | [法律 Skill 对齐与评测](expert-suites/legal-skill-design-evaluation/) | 法律经验 Brief、通用质量门及法律领域产出评测 | 3 | v0.1.0 | [待发布](https://github.com/cat-xierluo/legal-skills/releases/latest/download/suite-legal-skill-design-evaluation-0.1.0.zip) |
 
-新增四套的“待发布”链接为下一次 Release 预留，发布前可下载对应 PR 通过 CI 后生成的 Preview 产物。现有五套源码为 v0.1.1，表内仍保留已发布 v0.1.0 下载；新版入口见各套 README。套件安装前请阅读各自 README 的能力范围及依赖；重叠成员需核对版本，避免旧包覆盖新版。
+新增四套的“待发布”链接为下一次 Release 预留，发布前可下载对应 PR 通过 CI 后生成的 Preview 产物。现有五套中前四套源码为 v0.1.1，Skill 发布与分发源码为 v0.1.3，表内仍保留已发布 v0.1.0 下载；新版入口见各套 README。套件安装前请阅读各自 README 的能力范围及依赖；重叠成员需核对版本，避免旧包覆盖新版。
 
 ## 🛠️ 技能列表
 
@@ -237,9 +230,9 @@
 <td>通用·诉讼</td>
 <td style="word-break:break-word">基于案卷自动组织多角色模拟庭审：法官与民事原被告／刑事控辩通过书记员记录交换发言；支持版本化材料、取消重派与进度恢复，交付庭审笔录、争点复盘和庭前补强清单</td>
 <td style="text-align:center">CC-BY-NC</td>
-<td style="text-align:center">v1.2.4</td>
+<td style="text-align:center">v1.2.6</td>
 <td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/moot-court-1.2.1.zip">已发布包 v1.2.1</a></td>
-<td></td>
+<td>新增私有材料预检与跨 Runtime 候选准备；源码版本与已发布包分别标注</td>
 </tr>
 <tr>
 <td><a href="skills/contract-copilot/"><strong>contract-copilot</strong></a></td>
@@ -596,6 +589,15 @@
 <td>仅 macOS</td>
 </tr>
 <tr>
+<td><a href="skills/magpie-optimizer/"><strong>magpie-optimizer</strong></a></td>
+<td>工具·AI效能</td>
+<td style="word-break:break-word">基于 Magpie 分析个人 AI 工作效能：供应商与账号额度盘点、插件接入、路由治理、Token 消耗与限流诊断、资源安排建议，并关联任务产物和验收比较效果；本机配置与运行证据留在私有层</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v1.6.0</td>
+<td style="text-align:center">源码待发布</td>
+<td>本机配置通过 `config/*.local.*` 与 `state/` 私有层隔离；不改生产配置、不自动消耗额度</td>
+</tr>
+<tr>
 <td><a href="skills/lecture-review/"><strong>lecture-review</strong></a></td>
 <td>工具·复盘</td>
 <td style="word-break:break-word">讲课/培训表现复盘：口癖、语言习惯、节奏、时间分配、承诺回收、互动密度，支持课件逐页对照与跨场次对比</td>
@@ -744,9 +746,18 @@
 <td>工具·Star管理</td>
 <td style="word-break:break-word">GitHub Star 项目管理工具，从内容自动发现并 Star 项目，同步追踪已 Star 项目更新，生成可视化 Dashboard，支持分类管理和标签系统</td>
 <td style="text-align:center">MIT</td>
-<td style="text-align:center">v0.6.6</td>
-<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/github-star-manager-0.6.6.zip">下载</a></td>
-<td></td>
+<td style="text-align:center">v0.17.0</td>
+<td style="text-align:center"><a href="https://github.com/cat-xierluo/legal-skills/releases/download/v2026.09.30/github-star-manager-0.6.6.zip">下载 v0.6.6</a></td>
+<td>源码 v0.17.0 待发布；下载为已发布 v0.6.6。</td>
+</tr>
+<tr>
+<td><a href="skills/skill-publicizer/"><strong>skill-publicizer</strong></a></td>
+<td>工具·公开化</td>
+<td style="word-break:break-word">整理个人 Skill 的通用机制、配置样例与本地私有层，复查导出树及历史隐私，按已有授权交付公开候选</td>
+<td style="text-align:center">MIT</td>
+<td style="text-align:center">v1.0.0</td>
+<td style="text-align:center">源码待发布</td>
+<td>所属套件：Skill 发布与分发；按阶段依赖 skill-creator、skill-lint、git-workflow 等工具</td>
 </tr>
 <tr>
 <td><a href="skills/skill-publish-sync/"><strong>skill-publish-sync</strong></a></td>

@@ -242,12 +242,17 @@ class DailyLoopTests(unittest.TestCase):
 
     # ---------- receipt ----------
 
-    def write_run(self, candidates=0, generated_at=NOW, budget=None):
+    def write_run(self, candidates=0, generated_at=NOW, budget=None,
+                  quota=None, coverage_cycle=None):
         directory = self.data / "auto-opportunities" / "runs"
         directory.mkdir(parents=True, exist_ok=True)
         payload = {"schema_version": "1.0", "generated_at": generated_at.isoformat(),
                    "status": "ok", "items": [{"x": i} for i in range(candidates)],
                    "coverage": {"watch_coverage": {"request_budget": budget}}}
+        if quota is not None:
+            payload["coverage"]["review_queue"] = {"quota": quota}
+        if coverage_cycle is not None:
+            payload["coverage"].setdefault("review_queue", {})["coverage_cycle"] = coverage_cycle
         path = directory / (generated_at.strftime("%Y%m%dT%H%M%S.%fZ") + ".json")
         ad.atomic_json(path, payload)
         return path
@@ -266,6 +271,25 @@ class DailyLoopTests(unittest.TestCase):
         self.assertEqual(receipt["reconcile"]["cards_now_judged"], 1)
         # 只有拒绝/暂缓类判断 → 不打扰用户
         self.assertFalse(receipt["notification"]["recommended"])
+
+    def test_receipt_carries_the_round_quota_and_coverage_cycle(self):
+        # The receipt has to say where the candidates came from. A round that
+        # served the backlog instead of the evidence channel must be visible
+        # without re-reading the run package.
+        quota = {"backlog_reserve": 2, "backlog_reserved_slots": 2,
+                 "evidence_slots": 0, "sources_by_count": {"backlog": 2}}
+        cycle = {"never_shown_pending": 100, "backlog_slots_per_round": 2,
+                 "estimated_rounds_to_cover": 50, "observed_rounds_per_day": 1.0,
+                 "estimated_days_to_cover": 50.0}
+        self.write_run(candidates=2, generated_at=NOW,
+                       quota=quota, coverage_cycle=cycle)
+        self.write_queue([queue_entry()])
+        self.write_card(feedback_card(recorded_at=NOW + timedelta(seconds=30)))
+        payload, code = ad.build_receipt(self.data, now=NOW + timedelta(minutes=1))
+        self.assertEqual(code, 0)
+        receipt = payload["receipt"]
+        self.assertEqual(receipt["queue_quota"], quota)
+        self.assertEqual(receipt["coverage_cycle"], cycle)
 
     def test_receipt_silent_requires_positive_evidence(self):
         self.write_run(candidates=0, generated_at=NOW)
@@ -906,6 +930,96 @@ class UnreadableRunPackageRegressionTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(receipt["outcome"], "silent")
         self.assertFalse(receipt["facts"]["stale_run"])
+
+
+class ReceiptPreparationContractTests(unittest.TestCase):
+    """Malformed preparation is not positive evidence of zero candidates."""
+
+    def check_run(self, value, outcome=None):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            run = data / "auto-opportunities/runs/preparation.json"
+            run.parent.mkdir(parents=True)
+            run.write_text(json.dumps(value), encoding="utf-8")
+            return ad.build_receipt(data, outcome=outcome)
+
+    def test_missing_or_non_list_items_cannot_be_silent(self):
+        for value in ({}, {"items": None}, {"items": {}}, {"items": ""}):
+            with self.subTest(value=value):
+                result, code = self.check_run(value)
+                self.assertEqual(code, 1)
+                self.assertEqual(result["receipt"]["outcome"], "failed")
+                self.assertTrue(result["receipt"]["facts"]["run_invalid"])
+
+    def test_non_object_candidate_cannot_be_zero_or_valid_evidence(self):
+        result, code = self.check_run({"items": [None]})
+        self.assertEqual(code, 1)
+        self.assertTrue(result["receipt"]["facts"]["run_invalid"])
+
+    def test_malformed_coverage_is_controlled_failure(self):
+        for coverage in ([], ["bad"], "bad", {"watch_coverage": []},
+                         {"watch_coverage": ["bad"]}, {"review_queue": ["bad"]},
+                         {"review_queue": "bad"}, {"review_queue": 4}):
+            with self.subTest(coverage=coverage):
+                result, code = self.check_run({"items": [], "coverage": coverage})
+                self.assertEqual(code, 1)
+                self.assertEqual(result["receipt"]["outcome"], "failed")
+
+    def test_explicit_silent_rejects_invalid_run(self):
+        result, code = self.check_run({}, outcome="silent")
+        self.assertEqual(code, 1)
+        self.assertFalse(result["ok"])
+
+    def test_preparation_errors_survive_receipt(self):
+        result, code = self.check_run({"items": [], "status": "partial",
+                                       "errors": ["synthetic preparation failed"]})
+        self.assertEqual(code, 1)
+        self.assertEqual(result["receipt"]["outcome"], "failed")
+        self.assertTrue(any("synthetic preparation failed" in error
+                            for error in result["receipt"]["errors"]))
+
+    def test_invalid_status_and_error_container_fail_closed(self):
+        for fields in ({"status": "error"}, {"status": []},
+                       {"errors": "failed"}, {"errors": [None]}):
+            with self.subTest(fields=fields):
+                result, code = self.check_run({"items": [], **fields})
+                self.assertEqual(code, 1)
+                self.assertTrue(result["receipt"]["facts"]["run_invalid"])
+
+    def test_legacy_minimal_items_list_keeps_mtime_fallback(self):
+        result, code = self.check_run({"items": []})
+        self.assertEqual(code, 0)
+        self.assertEqual(result["receipt"]["outcome"], "silent")
+        self.assertEqual(result["receipt"]["facts"]["run_boundary_source"], "file_mtime")
+
+    def test_unparseable_timestamp_keeps_documented_mtime_fallback(self):
+        for timestamp in ("not-a-date", ["bad"], {"bad": True}):
+            with self.subTest(timestamp=timestamp):
+                result, code = self.check_run({"items": [], "generated_at": timestamp})
+                self.assertEqual(code, 0)
+                self.assertEqual(result["receipt"]["facts"]["run_boundary_source"], "file_mtime")
+
+    def test_cli_persists_failed_receipt_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory) / "auto-opportunities/runs/preparation.json"
+            run.parent.mkdir(parents=True)
+            run.write_text(json.dumps({"items": [], "coverage": ["bad"]}))
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPTS / "auto_discover.py"), "receipt",
+                 "--data-dir", directory, "--outcome", "auto"],
+                capture_output=True, text=True, check=False)
+            self.assertEqual(completed.returncode, 1)
+            self.assertNotIn("Traceback", completed.stderr)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["outcome"], "failed")
+            stored = json.loads(Path(result["receipt_path"]).read_text())
+            self.assertEqual(stored["outcome"], "failed")
+
+    def test_partial_with_warning_only_keeps_valid_empty_result(self):
+        result, code = self.check_run({"items": [], "status": "partial",
+                                      "warnings": ["bounded coverage"], "errors": []})
+        self.assertEqual(code, 0)
+        self.assertEqual(result["receipt"]["outcome"], "silent")
 
 
 if __name__ == "__main__":

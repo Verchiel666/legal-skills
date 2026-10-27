@@ -2,7 +2,7 @@
 name: github-star-manager
 homepage: https://github.com/cat-xierluo/legal-skills
 author: 杨卫薪律师（微信ywxlaw）
-version: "0.15.1"
+version: "0.17.1"
 license: MIT
 description: GitHub Star 项目管理、近期关注与更新追踪工具；用于从收藏中发现对本地 Skill 有价值的项目机会、生成证据包与每日候选队列，也支持内容自动 Star 和 Dashboard。不要用于单个未知仓库的一次性深度研究。
 ---
@@ -307,7 +307,7 @@ python scripts/auto_discover.py lease release \
 
 本轮取证失败或被预算跳过时，候选回退到上一份完整缓存，状态写成 `cached_partial` / `cached_skipped`（`evidence_source` 仍是 `cache`，摘要带自己的 `fetched_at`，并附 `fallback_note`），所以 Agent 一定分得清这批证据是本轮新取的还是旧的；`not_fetched` 只留给本轮与缓存都没有证据的候选。
 
-排序上"本轮已取证"是第一优先级维度：被本轮付费取证的仓库必定优先进入候选，排序不会被 `select_candidates` 的字母序覆盖；`--limit/--per-project/--per-repo` 上限与轮转公平性不变，已取证优先不等于某个仓库或项目可以占满名额。`evidence_rank` 的分档是"本轮深探测 > 本轮廉价探测 > 本轮部分失败（含回退缓存）> 缓存命中 > 无证据"——本轮尝试过但取证失败的候选不会被从未尝试过的缓存命中挤掉。`coverage.watch_coverage.evidence_candidates` 区分"已取证并进入候选""已取证但因队列上限未进入候选"和"候选中携带证据的条数"，没进候选不等于没变化。
+排序上证据分档是证据通道内的第一优先级维度：本轮深检与廉价探测优先，失败/缓存等仍按 `evidence_rank` 排序，不会被字母序覆盖；但证据通道不再独自占满整轮——`select_candidates` 每轮为 review 队列里最久未展示的 pending 保留固定名额（`--backlog-reserve`，默认 2），历史积压候选按等待时间最久优先进入候选。没有保留名额时，一轮 12 条候选可以连续多轮全部被本轮取证高分占满，历史 pending 缺少获得展示份额的保证；保留名额保证最老 pending 按固定周期出现。`--limit/--per-project/--per-repo` 上限与轮转公平性不变，保留名额同样受这些上限约束，一个仓库或项目仍不能占满整轮。保留名额没有可服务的积压时回落给证据通道，不浪费容量。`evidence_rank` 的分档是"本轮深探测 > 本轮廉价探测 > 本轮部分失败（含回退缓存）> 缓存命中 > 无证据"——本轮尝试过但取证失败的候选不会被从未尝试过的缓存命中挤掉。`coverage.watch_coverage.evidence_candidates` 区分"已取证并进入候选""已取证但因队列上限未进入候选"和"候选中携带证据的条数"；`coverage.review_queue.quota` 披露本轮候选的准入来源（`backlog` / `evidence` / `other`）、保留名额实际占用，以及同时属于证据池的 `with_evidence` 数量；`coverage.review_queue.coverage_cycle` 按真实运行包历史估算积压覆盖周期（`estimated_rounds_to_cover` / `estimated_days_to_cover`），并明确"未覆盖的仓库与未取证的仓库都不等于没有机会"。`queue_quota` 与 `coverage_cycle` 同时写入每日回执，闭环无需重读运行包即可核对来源与周期。没进候选不等于没变化。
 
 新增命令只需现有 Python 依赖；联网准备另需已认证的 GitHub CLI（`gh auth status` 核已有认证），不另配模型 Key。省略 `--refresh/--fetch-evidence` 时只用缓存；`--write` 才保存运行包。自定义套件用可重复的 `--skills-root`。
 
@@ -320,6 +320,8 @@ Agent 再核对目标现有实现与 README/Release/提交摘要，按需读取�
 **分类匹配统一**：`common.match_categories` 是唯一评分实现（关键词命中×3 + 语言精确 +2 + topic 精确 +2）——在线导出（单分类=多标签首个）与 quick_export（多标签）共用（收敛审计「分类/导出分叉」）。
 
 **可选目标补充**：`output/projects/<project_id>.json` 支持 `project_id/capabilities/needs/constraints`。动态发现优先提供实时上下文，显式 profile 可补充需求或仓库外项目；失效引用仍拒绝。`--data-dir` 可将查询和反馈放在同一私有状态目录。
+
+有价值的复用提案先读[动态复用审查](references/reuse-assessment.md)，用 `reuse_assessment.py prepare/evaluate` 将每日候选、动态目标原文、三修订与来源摘录绑定；Agent 判断语义，脚本核字段及证据义务，正向结果仅到实验提案。缺据记 deferred 并列下一步，不批量拒绝整个仓库。报告引用保存后仍可回读，反馈消费时持续重验；同方向多来源锚点归并为一项，缓存文字不冒充本轮观察。
 
 **机会卡与采用反馈**（`scripts/opportunity.py`）：research 产出的候选经当前 Agent 分析后，用机会卡记录判断（signal/target/evidence/gap/hypothesis/experiment/decision 七字段必答）。decision 状态机强制：`tested` 必须带 `run_evidence`（运行产物+验证日志），`adopted` 必须再有 `adoption_evidence`（目标项目产物/提交+验收回执）——没有证据时只允许 `researched`/`experiment_proposed`，写下"已测试/已采用"不能关单。
 

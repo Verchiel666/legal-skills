@@ -16,7 +16,18 @@ python3 scripts/test_clerk.py
 python3 scripts/test_index_claude_trace.py
 ```
 
-覆盖 `scripts/index_claude_trace.py` 对 Claude `--output-format stream-json --verbose` 原件的被动解析：真实事件结构、同一消息多事件与重复流事件去重、同 ID 内容冲突拒绝、未完成调用不计 completed、坏 JSON 行如实标注、普通 Bash/计划类工具不误计为派发、tool_use 与 tool_result 按行号与 sha256 绑定原始 trace、拒绝覆盖既有输出；本机归档存在真实 CLI 产物时附带实测，缺失时显式跳过。索引只证明 trace 中可观察的调用，不验证法律语义，也不单独构成 G5 通过。
+覆盖 `scripts/index_claude_trace.py` 对 Claude `--output-format stream-json --verbose` 原件的被动解析：真实事件结构、同一消息多事件与重复流事件去重、同 ID 内容冲突拒绝、未完成调用不计 completed、坏 JSON 行如实标注、普通 Bash/计划类工具不误计为派发、tool_use 与 tool_result 按行号与 sha256 绑定原始 trace、拒绝覆盖既有输出；本机归档存在真实 CLI 产物时附带实测，缺失时显式跳过。入口输出 `MC_TRACE_COVERAGE` JSON，`suite_ok` 与 `real_trace` 分开记录。需要真实日志验收时设置 `MC027_REAL_TRACE=/absolute/path/g2-stream.jsonl MC_REQUIRE_REAL_TRACE=1`；真实用例未运行／未通过返回非零（测试失败为 1，覆盖不足为 3），不能只读测试总退出码便称原生格式已覆盖。固定短答在原件的结果行核对，不依赖长度有限的预览。索引只证明 trace 中可观察的调用，不验证法律语义，也不单独构成 G5 通过。
+
+## 入卷预检与候选准备
+
+```bash
+python3 -B scripts/test_presubmit_check.py
+python3 -B scripts/test_prepare_runtime_candidate.py
+```
+
+预检回归覆盖正常公开引用、私有编号与独有原文阻断、他方材料检测、快照错配、结构错误退出码和报告脱敏；公开引文与私有备忘的重合不能被机械判为泄露。完整清单只给主控，不能随测试便利送给角色。原文窗口只比较去空白后连续 10 字，不识别短片段、标点改写或语义转述；法条形态只作提示，不认证法源。
+
+候选准备按[候选包流程](runtime-candidate.md)检查生成物、排除集、引用、输入摘要与路径拒绝，消费 bundle 内的 Skill 和案卷做真实书记员初始化。准备通过不能代替 G5。重复事件身份与原生乱序的支持合同仍沿索引器既有保守行为，不因覆盖输出新增而扩大接受范围。
 
 ## 无旧上下文的前向评估
 
